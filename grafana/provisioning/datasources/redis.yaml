@@ -1,0 +1,17 @@
+apiVersion: 1
+
+datasources:
+  - name: Redis
+    uid: solaredge-redis
+    type: redis-datasource
+    access: proxy
+    isDefault: true
+    orgId: 1
+    version: 1
+    url: redis://redis:6379
+    jsonData:
+      poolSize: 5
+      timeout: 10
+      pingInterval: 0
+      pipelineWindow: 0
+    editable: true

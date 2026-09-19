@@ -1,0 +1,508 @@
+{
+  "uid": "solaredge-se10k",
+  "title": "SolarEdge SE10K-RWB48",
+  "tags": ["solaredge"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "graphTooltip": 2,
+  "time": { "from": "now-24h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "PV-Gesamtleistung",
+      "description": "Gesamte Erzeugung der Panels: power_dc + Leistung, die gerade direkt (DC-gekoppelt) in die Batterie geladen wird. Ohne diesen Zuschlag zeigt power_dc beim Laden nur den Rest, der zur AC-Umwandlung geht.",
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 0 },
+      "datasource": { "type": "redis-datasource", "uid": "solaredge-redis" },
+      "fieldConfig": { "defaults": { "unit": "watt" }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "area" },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "solaredge:inverter:latest",
+          "field": "power_pv_total"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Netzleistung",
+      "description": "Positiv = Einspeisung ins öffentliche Netz, negativ = Bezug aus dem Netz. Leer, falls kein Energy Meter installiert ist.",
+      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 0 },
+      "datasource": { "type": "redis-datasource", "uid": "solaredge-redis" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 0 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "area" },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "solaredge:meter:meter1:latest",
+          "field": "power"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Batterieleistung",
+      "description": "Positiv = Laden, negativ = Entladen. Leer, falls keine Batterie installiert ist.",
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 0 },
+      "datasource": { "type": "redis-datasource", "uid": "solaredge-redis" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 0 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "area" },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "solaredge:battery:battery1:latest",
+          "field": "instantaneous_power"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "AC-Ausgangsleistung",
+      "description": "Was der Wechselrichter tatsächlich als Wechselstrom ausgibt (an Haus + Netz), ohne den direkt in die Batterie geladenen Anteil.",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 4 },
+      "datasource": { "type": "redis-datasource", "uid": "solaredge-redis" },
+      "fieldConfig": { "defaults": { "unit": "watt" }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "solaredge:inverter:latest",
+          "field": "power_ac"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Temperatur",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 4 },
+      "datasource": { "type": "redis-datasource", "uid": "solaredge-redis" },
+      "fieldConfig": { "defaults": { "unit": "celsius", "decimals": 1 }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "solaredge:inverter:latest",
+          "field": "temperature"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Status",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 4 },
+      "datasource": { "type": "redis-datasource", "uid": "solaredge-redis" },
+      "fieldConfig": { "defaults": { "unit": "none" }, "overrides": [] },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "/.*/" },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "solaredge:inverter:latest",
+          "field": "status_label"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "gauge",
+      "title": "Batterie-Ladezustand",
+      "description": "Zeigt nichts an, falls keine Batterie installiert ist.",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 4 },
+      "datasource": { "type": "redis-datasource", "uid": "solaredge-redis" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 20 },
+              { "color": "green", "value": 50 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "solaredge:battery:battery1:latest",
+          "field": "soe"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Wechselrichter-Leistung",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "redis-datasource", "uid": "solaredge-redis" },
+      "fieldConfig": { "defaults": { "unit": "watt" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:inverter:power_pv_total",
+          "legend": "PV-Gesamtleistung"
+        },
+        {
+          "refId": "B",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:inverter:power_ac",
+          "legend": "AC-Ausgangsleistung"
+        },
+        {
+          "refId": "C",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:inverter:power_dc",
+          "legend": "DC-Leistung (zur AC-Umwandlung)"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Netzleistung (Meter)",
+      "description": "Positiv = Einspeisung ins Netz, negativ = Bezug aus dem Netz. Leer, falls kein Energy Meter installiert ist.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "redis-datasource", "uid": "solaredge-redis" },
+      "fieldConfig": { "defaults": { "unit": "watt" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:meter:meter1:power",
+          "legend": "Netzleistung"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Batterie-Leistung",
+      "description": "Positiv = Laden, negativ = Entladen. Leer, falls keine Batterie installiert ist.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "datasource": { "type": "redis-datasource", "uid": "solaredge-redis" },
+      "fieldConfig": { "defaults": { "unit": "watt" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:battery:battery1:instantaneous_power",
+          "legend": "Batterieleistung"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Batterie-Ladezustand (Verlauf)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "datasource": { "type": "redis-datasource", "uid": "solaredge-redis" },
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:battery:battery1:soe",
+          "legend": "SOC"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "stat",
+      "title": "Gesamtertrag (Lifetime)",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 24 },
+      "datasource": { "type": "redis-datasource", "uid": "solaredge-redis" },
+      "fieldConfig": { "defaults": { "unit": "none", "decimals": 0, "displayName": "Wh gesamt" }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "solaredge:inverter:latest",
+          "field": "energy_total"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "stat",
+      "title": "Frequenz",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 24 },
+      "datasource": { "type": "redis-datasource", "uid": "solaredge-redis" },
+      "fieldConfig": { "defaults": { "unit": "hertz", "decimals": 2 }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "solaredge:inverter:latest",
+          "field": "frequency"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "stat",
+      "title": "Sonnenstand: Azimut",
+      "description": "Himmelsrichtung der Sonne, im Uhrzeigersinn ab Norden (0°=N, 90°=O, 180°=S, 270°=W).",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 24 },
+      "datasource": { "type": "redis-datasource", "uid": "solaredge-redis" },
+      "fieldConfig": { "defaults": { "unit": "degree", "decimals": 1 }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "solaredge:sun:latest",
+          "field": "azimuth"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "stat",
+      "title": "Sonnenstand: Elevation",
+      "description": "Höhe der Sonne über dem Horizont. Negativ = Sonne ist untergegangen.",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 24 },
+      "datasource": { "type": "redis-datasource", "uid": "solaredge-redis" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "degree",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 0 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "solaredge:sun:latest",
+          "field": "elevation"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "Sonnenstand: Azimut & Elevation",
+      "description": "Azimut (links, 0-360°) und Elevation (rechts, -90..90°) in einem Panel, getrennte Achsen wegen unterschiedlicher Wertebereiche.",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 28 },
+      "datasource": { "type": "redis-datasource", "uid": "solaredge-redis" },
+      "fieldConfig": {
+        "defaults": { "unit": "degree" },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Azimut" },
+            "properties": [
+              { "id": "custom.axisPlacement", "value": "left" },
+              { "id": "min", "value": 0 },
+              { "id": "max", "value": 360 }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Elevation" },
+            "properties": [
+              { "id": "custom.axisPlacement", "value": "right" },
+              { "id": "min", "value": -90 },
+              { "id": "max", "value": 90 }
+            ]
+          }
+        ]
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:sun:azimuth",
+          "legend": "Azimut"
+        },
+        {
+          "refId": "B",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:sun:elevation",
+          "legend": "Elevation"
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "type": "stat",
+      "title": "Außentemperatur",
+      "description": "Quelle: Open-Meteo (open-meteo.com), Aktualisierung alle 15 Minuten.",
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 36 },
+      "datasource": { "type": "redis-datasource", "uid": "solaredge-redis" },
+      "fieldConfig": { "defaults": { "unit": "celsius", "decimals": 1 }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "area" },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "solaredge:weather:latest",
+          "field": "temperature_c"
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "type": "stat",
+      "title": "Sonneneinstrahlung",
+      "description": "Globalstrahlung (GHI). Quelle: Open-Meteo, Aktualisierung alle 15 Minuten.",
+      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 36 },
+      "datasource": { "type": "redis-datasource", "uid": "solaredge-redis" },
+      "fieldConfig": { "defaults": { "unit": "Wm2", "decimals": 0 }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "area" },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "solaredge:weather:latest",
+          "field": "shortwave_radiation"
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "type": "stat",
+      "title": "Bewölkung",
+      "description": "Quelle: Open-Meteo, Aktualisierung alle 15 Minuten.",
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 36 },
+      "datasource": { "type": "redis-datasource", "uid": "solaredge-redis" },
+      "fieldConfig": { "defaults": { "unit": "percent", "decimals": 0 }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "solaredge:weather:latest",
+          "field": "cloud_cover"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Wetter: Temperatur & Einstrahlung",
+      "description": "Temperatur (links, °C) und Sonneneinstrahlung (rechts, W/m²). Quelle: Open-Meteo.",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 40 },
+      "datasource": { "type": "redis-datasource", "uid": "solaredge-redis" },
+      "fieldConfig": {
+        "defaults": { "unit": "celsius" },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Einstrahlung" },
+            "properties": [
+              { "id": "unit", "value": "Wm2" },
+              { "id": "custom.axisPlacement", "value": "right" },
+              { "id": "min", "value": 0 }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Temperatur" },
+            "properties": [{ "id": "custom.axisPlacement", "value": "left" }]
+          }
+        ]
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:weather:temperature_c",
+          "legend": "Temperatur"
+        },
+        {
+          "refId": "B",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:weather:shortwave_radiation",
+          "legend": "Einstrahlung"
+        }
+      ]
+    }
+  ]
+}

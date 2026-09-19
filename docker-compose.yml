@@ -1,0 +1,65 @@
+services:
+  redis:
+    image: redis/redis-stack-server:latest
+    restart: unless-stopped
+    command: ["/entrypoint.sh", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    ports:
+      - "127.0.0.1:6379:6379"
+
+  poller:
+    build: ./poller
+    restart: unless-stopped
+    depends_on:
+      - redis
+    environment:
+      INVERTER_HOST: ${INVERTER_HOST:-192.168.0.174}
+      INVERTER_PORT: ${INVERTER_PORT:-502}
+      MODBUS_UNIT: ${MODBUS_UNIT:-1}
+      MODBUS_TIMEOUT: ${MODBUS_TIMEOUT:-5}
+      POLL_INTERVAL: ${POLL_INTERVAL:-10}
+      TS_RETENTION_DAYS: ${TS_RETENTION_DAYS:-365}
+      LAT: ${LAT:-}
+      LON: ${LON:-}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    restart: unless-stopped
+    depends_on:
+      - redis
+    ports:
+      # Ohne 127.0.0.1-Bindung: aus dem ganzen WLAN erreichbar unter http://<Docker-Host-IP>:3000
+      - "3000:3000"
+    environment:
+      GF_INSTALL_PLUGINS: redis-datasource
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/etc/grafana/dashboards
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:3000/api/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  grafana-init:
+    build: ./grafana-init
+    restart: "no"
+    depends_on:
+      grafana:
+        condition: service_healthy
+    environment:
+      GRAFANA_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      # Format: "login:passwort:rolle,login2:passwort2:rolle2" -- Rolle ist Viewer/Editor/Admin (Default Viewer)
+      GRAFANA_USERS: ${GRAFANA_USERS:-}
+
+volumes:
+  redis-data:
+  grafana-data:

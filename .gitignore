@@ -1,0 +1,16 @@
+# Secrets / lokale Konfiguration
+.env
+
+# Backups mit sensiblen Daten (Passwörter, private Schlüssel) -- nie committen
+*.tar.gz
+*.zip
+
+# Deploy-Artefakte (werden vom Makefile generiert)
+deploy/
+
+# Python
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
