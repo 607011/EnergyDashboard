@@ -252,11 +252,22 @@ def poll_once(inverter: solaredge_modbus.Inverter, r: redis.Redis) -> None:
     if isinstance(power_dc, (int, float)):
         inverter_values["power_pv_total"] = power_dc + battery_power
 
-    log_device(r, "inverter", inverter_values, ts_ms)
-
+    # meter "power" is positive = export to the grid, negative = import from it
+    # (verified against the SolarEdge app). Whatever the inverter puts out that
+    # isn't exported must have gone to the house -- and whatever is imported
+    # went to the house too -- so this holds regardless of charge/discharge state.
+    meter_power = 0.0
     for meter_id, meter in inverter.meters().items():
         values = apply_scale_factors(meter)
         log_device(r, f"meter:{meter_id.lower()}", values, ts_ms)
+        if isinstance(values.get("power"), (int, float)):
+            meter_power += values["power"]
+
+    power_ac = inverter_values.get("power_ac")
+    if isinstance(power_ac, (int, float)):
+        inverter_values["house_consumption"] = power_ac - meter_power
+
+    log_device(r, "inverter", inverter_values, ts_ms)
 
     if LAT is not None and LON is not None:
         azimuth, elevation = solar_position(datetime.now(timezone.utc), LAT, LON)

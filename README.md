@@ -1,180 +1,181 @@
 # SE10K Modbus → Redis → Grafana
 
-Fragt den SolarEdge SE10K-RWB48 lokal per Modbus TCP (SunSpec-Profil) ab,
-schreibt die Werte nach Redis und zeigt sie in einem Grafana-Dashboard —
-komplett ohne SolarEdge-Cloud.
+Polls a SolarEdge SE10K-RWB48 locally via Modbus TCP (SunSpec profile),
+writes the values to Redis, and visualizes them in a Grafana dashboard —
+completely without the SolarEdge cloud.
 
-Es werden automatisch erkannt und geloggt:
-- der Wechselrichter selbst
-- angeschlossene Energy Meter (sofern vorhanden)
-- angeschlossene Batterien (sofern vorhanden, z. B. SolarEdge Home Battery)
+Automatically detected and logged:
+- the inverter itself
+- attached energy meters (if present)
+- attached batteries (if present, e.g. SolarEdge Home Battery)
 
 ## Setup
 
-1. Am Wechselrichter unter *Communication → Modbus TCP* muss "Enabled" gesetzt sein
-   (ist bei dir bereits der Fall, IP `192.168.0.174`).
-2. `.env` aus der Vorlage anlegen und bei Bedarf anpassen:
+1. On the inverter, under *Communication → Modbus TCP*, "Enabled" must be set
+   (already the case for you, IP `192.168.0.174`).
+2. Create `.env` from the template and adjust as needed:
 
    ```bash
    cp .env.example .env
    ```
 
-3. Starten:
+3. Start:
 
    ```bash
    docker compose up -d --build
    ```
 
-4. Logs prüfen:
+4. Check the logs:
 
    ```bash
    docker compose logs -f poller
    ```
 
-5. Dashboard öffnen: [http://localhost:3000](http://localhost:3000) — auch von anderen
-   Geräten im WLAN unter `http://<IP-des-Docker-Hosts>:3000` erreichbar.
-   (Login: `admin` / das in `.env` gesetzte `GRAFANA_ADMIN_PASSWORD`, Default `admin`).
-   Das Dashboard "SolarEdge SE10K-RWB48" ist automatisch vorhanden (Provisioning).
+5. Open the dashboard: [http://localhost:3000](http://localhost:3000) — also reachable
+   from other devices on the LAN at `http://<docker-host-ip>:3000`.
+   (Login: `admin` / the `GRAFANA_ADMIN_PASSWORD` set in `.env`, default `admin`).
+   The "SolarEdge SE10K-RWB48" dashboard is available automatically (provisioning).
 
-## Architektur
+## Architecture
 
 ```
 SolarEdge SE10K  --Modbus TCP-->  poller (Python)  --> Redis (redis-stack)  <-- Grafana
 ```
 
-- **poller**: pollt alle `POLL_INTERVAL` Sekunden alle Register, faltet SunSpec
-  Value/Scale-Registerpaare zu fertigen Zahlen zusammen und schreibt sie nach Redis.
-- **redis** (Image `redis/redis-stack-server`): normales Redis *plus* das
-  RedisTimeSeries-Modul für die Verlaufsdaten.
-- **grafana**: mit dem [Redis-Datasource-Plugin](https://github.com/RedisGrafana/grafana-redis-datasource),
-  Datasource und Dashboard sind vorprovisioniert (`grafana/provisioning/`,
-  `grafana/dashboards/solaredge.json`). Port `3000` ist auf allen Interfaces
-  gebunden, also aus dem ganzen WLAN erreichbar.
-- **grafana-init**: einmaliger Hilfscontainer, der nach jedem Start per
-  Grafana-HTTP-API die in `GRAFANA_USERS` (`.env`) hinterlegten Zusatz-Nutzer
-  anlegt bzw. deren Passwort/Rolle aktualisiert, dann beendet er sich.
+- **poller**: polls all registers every `POLL_INTERVAL` seconds, folds SunSpec
+  value/scale register pairs into finished numbers, and writes them to Redis.
+- **redis** (image `redis/redis-stack-server`): plain Redis *plus* the
+  RedisTimeSeries module for the history data.
+- **grafana**: with the [Redis datasource plugin](https://github.com/RedisGrafana/grafana-redis-datasource),
+  datasource and dashboard are pre-provisioned (`grafana/provisioning/`,
+  `grafana/dashboards/solaredge.json`). Port `3000` is bound on all
+  interfaces, so it's reachable from the whole LAN.
+- **grafana-init**: a one-shot helper container that, after every start, uses
+  the Grafana HTTP API to create the extra users listed in `GRAFANA_USERS`
+  (`.env`) or update their password/role, then exits.
 
-## Datenmodell in Redis
+## Data model in Redis
 
-Pro Gerät gibt es zwei Arten von Keys:
+There are two kinds of keys per device:
 
-- `solaredge:<device>:latest` — Hash mit den aktuellsten Werten (z. B. `power_ac`,
-  `energy_total`, `status_label`, `temperature`, `updated_at`, ...) — für Stat-/Gauge-Panels
-- `ts:<device>:<feld>` — ein RedisTimeSeries-Key pro numerischem Feld, z. B.
-  `ts:inverter:power_ac` — für Verlaufsgraphen in Grafana
+- `solaredge:<device>:latest` — hash with the most recent values (e.g. `power_ac`,
+  `energy_total`, `status_label`, `temperature`, `updated_at`, ...) — for stat/gauge panels
+- `ts:<device>:<field>` — a RedisTimeSeries key per numeric field, e.g.
+  `ts:inverter:power_ac` — for history graphs in Grafana
 
-`<device>` ist `inverter`, `meter:meter1`, `battery:battery1` usw.
+`<device>` is `inverter`, `meter:meter1`, `battery:battery1`, etc.
 
-Beispiele:
+Examples:
 
 ```bash
-# aktuelle Werte des Wechselrichters
+# current inverter values
 redis-cli HGETALL solaredge:inverter:latest
 
-# Leistungsverlauf der letzten Stunde
+# power history of the last hour
 redis-cli TS.RANGE ts:inverter:power_ac $(($(date +%s%3N)-3600000)) +
 ```
 
-Die History-Länge wird über `TS_RETENTION_DAYS` begrenzt (Default: 365 Tage),
-ältere Samples fallen automatisch raus (RedisTimeSeries-Retention). Ändert
-sich der Wert, gleicht der Poller beim nächsten Start die Retention aller
-bereits bestehenden Serien automatisch an (`TS.ADD` selbst ändert sie bei
-existierenden Keys nicht, siehe `sync_retention()` in `poller/poller.py`).
+History length is capped via `TS_RETENTION_DAYS` (default: 365 days),
+older samples fall off automatically (RedisTimeSeries retention). If the
+value changes, the poller aligns the retention of all existing series on
+the next start (`TS.ADD` itself doesn't change it on existing keys, see
+`sync_retention()` in `poller/poller.py`).
 
-### Langfristige Statistik (Compaction)
+### Long-term statistics (compaction)
 
-Damit mehrjährige Auswertungen nicht am Speicherplatz scheitern, legt der
-Poller zusätzlich drei **unbegrenzt aufbewahrte** Tages-Rollups an
-(RedisTimeSeries-Compaction-Rules, `TS.CREATERULE`):
+So multi-year analyses don't run out of disk space, the poller additionally
+creates three **indefinitely retained** daily rollups (RedisTimeSeries
+compaction rules, `TS.CREATERULE`):
 
-- `ts:inverter:energy_total:daily` — Tages-Endstand des Lifetime-Zählers (`LAST`)
-- `ts:inverter:power_pv_total:daily_avg` — Tagesdurchschnitt der PV-Leistung
-- `ts:inverter:power_pv_total:daily_max` — Tagesspitze der PV-Leistung
+- `ts:inverter:energy_total:daily` — end-of-day value of the lifetime counter (`LAST`)
+- `ts:inverter:power_pv_total:daily_avg` — daily average PV power
+- `ts:inverter:power_pv_total:daily_max` — daily peak PV power
 
-Diese drei Reihen wachsen nur um ~365 Punkte pro Jahr und können daher für
-immer aufbewahrt werden. Für die Produktion pro Monat eignet sich
-`energy_total:daily` am besten, da es sich um einen monoton steigenden
-Zähler handelt — die Monatsproduktion ist einfach die Differenz von End- und
-Anfangswert, ganz ohne Rundungsfehler durch Mittelwertbildung:
+These three series only grow by ~365 points per year and can therefore be
+kept forever. For monthly production, `energy_total:daily` is the best fit
+since it's a monotonically increasing counter — monthly production is
+simply the difference between the end and start value, with no rounding
+error from averaging:
 
 ```bash
-# Endstand am Monatsende minus Endstand am Vormonatsende = Produktion des Monats (Wh)
-redis-cli TS.RANGE ts:inverter:energy_total:daily <von_ts_ms> <bis_ts_ms>
+# end value at month end minus end value at previous month end = that month's production (Wh)
+redis-cli TS.RANGE ts:inverter:energy_total:daily <from_ts_ms> <to_ts_ms>
 ```
 
-Weitere Rollups lassen sich nach demselben Muster in `COMPACTION_RULES`
-(`poller/poller.py`) ergänzen.
+Further rollups can be added the same way in `COMPACTION_RULES`
+(`poller/poller.py`).
 
-## Wichtige Felder
+## Important fields
 
-**Inverter:** `power_ac` (W), `power_dc` (W), `energy_total` (Wh, kumulativ),
+**Inverter:** `power_ac` (W), `power_dc` (W), `energy_total` (Wh, cumulative),
 `temperature` (°C), `frequency` (Hz), `status` / `status_label`
-(Off/Sleeping/Producing/Fault/...), AC-Spannung/-Strom je Phase
+(Off/Sleeping/Producing/Fault/...), AC voltage/current per phase
 (`l1_voltage`, `l1_current`, ...)
 
-**Meter** (falls vorhanden): `power` (W, positiv = Einspeisung ins Netz,
-negativ = Bezug aus dem Netz — anhand eines Vergleichs mit der SolarEdge-App
-verifiziert), `export_energy_active`, `import_energy_active`
+**Meter** (if present): `power` (W, positive = export to the grid,
+negative = import from the grid — verified against the SolarEdge app),
+`export_energy_active`, `import_energy_active`
 
-**Battery** (falls vorhanden): `soe` (State of Energy / Ladezustand in %),
-`instantaneous_power` (positiv = Laden, negativ = Entladen), `status` /
+**Battery** (if present): `soe` (State of Energy / charge level in %),
+`instantaneous_power` (positive = charging, negative = discharging), `status` /
 `status_label`, `available_energy`
 
-**Wichtiger Sonderfall bei DC-gekoppelter Batterie (Hybrid-Wechselrichter wie
-der SE10K-RWB48):** Die Batterie hängt am selben DC-Bus wie die Panels, aber
-*vor* der eigentlichen DC/AC-Umwandlungsstufe des Wechselrichters. Während die
-Batterie lädt, zeigt `power_dc` deshalb nur den Rest, der zur AC-Umwandlung
-übrig bleibt — nicht die gesamte Panel-Erzeugung. Der Poller berechnet daher
-zusätzlich `power_pv_total = power_dc + Batterieladeleistung` (nur solange
-`status_label` der Batterie `Charge` ist) als bestmögliche Näherung an die
-tatsächliche Gesamtleistung der Panels, so wie sie auch die SolarEdge-App
-als "aktuelle Sonnenenergie" anzeigt.
+**Important special case with a DC-coupled battery (hybrid inverter like
+the SE10K-RWB48):** the battery hangs off the same DC bus as the panels, but
+*before* the inverter's actual DC/AC conversion stage. So while the battery
+is charging, `power_dc` only shows what's left over for AC conversion — not
+the panels' total output. The poller therefore additionally computes
+`power_pv_total = power_dc + battery charging power` (only while the
+battery's `status_label` is `Charge`) as the best approximation of the
+panels' actual total output, the same way the SolarEdge app shows it as
+"current solar power".
 
 ## Dashboard
 
-Enthält: PV-Gesamtleistung (inkl. Batterieladeanteil), AC-Ausgangsleistung,
-Netzleistung, Batterieleistung, Temperatur, Status, Batterie-Ladezustand
-(aktuell + Verlauf), Wechselrichter-Leistungsverlauf, Gesamtertrag (Lifetime)
-und Netzfrequenz. Panels für Meter/Batterie bleiben leer, falls keine
-entsprechenden Geräte am Wechselrichter angeschlossen sind.
+Includes: total PV power (incl. battery-charging share), AC output power,
+grid power, battery power, house consumption, temperature, status, battery
+charge level (current + history), inverter power history, lifetime yield,
+grid frequency, sun position (azimuth/elevation), and outside
+temperature/irradiance/cloud cover. Meter/battery panels stay empty if no
+corresponding devices are connected to the inverter.
 
-Das Dashboard liegt als JSON unter `grafana/dashboards/solaredge.json` und
-wird beim Start automatisch geladen (Grafana-Provisioning); Änderungen in der
-Grafana-UI lassen sich über "Export → Save JSON" wieder dorthin zurückspeichern.
+The dashboard lives as JSON under `grafana/dashboards/solaredge.json` and is
+loaded automatically on startup (Grafana provisioning); changes made in the
+Grafana UI can be saved back there via "Export → Save JSON".
 
-## Konfiguration (`.env`)
+## Configuration (`.env`)
 
-| Variable                  | Default            | Bedeutung                                |
-|----------------------------|--------------------|-------------------------------------------|
-| `INVERTER_HOST`            | `192.168.0.174`    | IP des Wechselrichters                    |
-| `INVERTER_PORT`            | `502`              | Modbus-TCP-Port                           |
-| `MODBUS_UNIT`              | `1`                | Modbus Unit/Slave-ID                      |
-| `MODBUS_TIMEOUT`           | `5`                | Timeout pro Leseversuch (Sekunden)        |
-| `POLL_INTERVAL`            | `10`               | Abstand zwischen zwei Abfragen (Sekunden) |
-| `TS_RETENTION_DAYS`        | `365`               | Aufbewahrungsdauer der Rohdaten-Verlaufsreihen |
-| `GRAFANA_ADMIN_PASSWORD`   | `admin`            | Grafana-Login beim ersten Start           |
-| `GRAFANA_USERS`            | *(leer)*           | Weitere Grafana-Nutzer, siehe unten       |
+| Variable                  | Default            | Meaning                                    |
+|----------------------------|--------------------|---------------------------------------------|
+| `INVERTER_HOST`            | `192.168.0.174`    | IP of the inverter                          |
+| `INVERTER_PORT`            | `502`              | Modbus TCP port                             |
+| `MODBUS_UNIT`              | `1`                | Modbus unit/slave ID                        |
+| `MODBUS_TIMEOUT`           | `5`                | Timeout per read attempt (seconds)          |
+| `POLL_INTERVAL`            | `10`               | Interval between two polls (seconds)        |
+| `TS_RETENTION_DAYS`        | `365`              | Retention period of the raw history series  |
+| `GRAFANA_ADMIN_PASSWORD`   | `admin`            | Grafana login on first start                |
+| `GRAFANA_USERS`            | *(empty)*          | Additional Grafana users, see below         |
 
-Der Poller reconnected automatisch mit exponentiellem Backoff, falls der
-Wechselrichter kurzzeitig nicht erreichbar ist (z. B. nachts im Standby oder
-bei Netzwerkproblemen).
+The poller automatically reconnects with exponential backoff if the
+inverter is briefly unreachable (e.g. at night in standby, or during
+network issues).
 
-### Weitere Grafana-Nutzer (`GRAFANA_USERS`)
+### Additional Grafana users (`GRAFANA_USERS`)
 
-Format in `.env`, kommagetrennt, je Eintrag `login:passwort:rolle`
-(Rolle optional, Default `Viewer`):
+Format in `.env`, comma-separated, each entry `login:password:role`
+(role optional, defaults to `Viewer`):
 
 ```bash
-GRAFANA_USERS=familie:einSicheresPasswort:Viewer,partner:anderesPasswort:Editor
+GRAFANA_USERS=family:aSecurePassword:Viewer,partner:anotherPassword:Editor
 ```
 
-Bei jedem `docker compose up` legt der `grafana-init`-Container diese Nutzer
-über die Grafana-API an bzw. gleicht Passwort und Rolle ab, falls sie schon
-existieren — kein manuelles Anlegen in der UI nötig. Rollen: `Viewer`
-(nur ansehen), `Editor` (Dashboards bearbeiten), `Admin` (volle Rechte).
+On every `docker compose up`, the `grafana-init` container creates these
+users via the Grafana API, or syncs their password and role if they already
+exist — no manual setup in the UI needed. Roles: `Viewer` (view only),
+`Editor` (can edit dashboards), `Admin` (full access).
 
-**Wichtig:** `GRAFANA_ADMIN_PASSWORD` wirkt nur beim allerersten Start (siehe
-oben) — `GRAFANA_USERS` dagegen wird bei *jedem* Start erneut angewendet,
-da es über die laufende API provisioniert und nicht nur beim Erststart gesetzt
-wird. Ein geändertes Passwort in `.env` für einen bestehenden Nutzer wird beim
-nächsten `docker compose up` also übernommen.
+**Important:** `GRAFANA_ADMIN_PASSWORD` only takes effect on the very first
+start (see above) — `GRAFANA_USERS`, on the other hand, is re-applied on
+*every* start, since it's provisioned via the running API rather than only
+set at first boot. So a changed password in `.env` for an existing user is
+picked up on the next `docker compose up`.

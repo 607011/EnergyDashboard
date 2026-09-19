@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-# --- Konfiguration (überschreibbar: make deploy PI_HOST=192.168.0.5) ---
+# --- Configuration (override e.g. via: make deploy PI_HOST=192.168.0.5) ---
 PI_HOST      ?= 192.168.0.2
 PI_DIR       ?= ~/se10k
 DEPLOY_DIR   := deploy
@@ -13,21 +13,21 @@ COMPOSE_DST  := $(DEPLOY_DIR)/docker-compose.yml
         prepare-deploy clean-deploy
 
 help:
-	@echo "Lokale Entwicklung:"
-	@echo "  make up             - Stack lokal bauen und starten"
-	@echo "  make down           - Lokalen Stack stoppen"
-	@echo "  make restart        - Lokalen Stack neu starten"
-	@echo "  make logs           - Poller-Logs verfolgen"
-	@echo "  make ps             - Laufende Container anzeigen"
+	@echo "Local development:"
+	@echo "  make up             - Build and start the stack locally"
+	@echo "  make down           - Stop the local stack"
+	@echo "  make restart        - Restart the local stack"
+	@echo "  make logs           - Follow the poller logs"
+	@echo "  make ps             - Show running containers"
 	@echo ""
-	@echo "Deployment auf den Raspberry Pi (PI_HOST=$(PI_HOST), PI_DIR=$(PI_DIR)):"
-	@echo "  make deploy         - Kompletter Deploy: bauen, alle Images übertragen, starten"
-	@echo "  make deploy-poller  - Schneller Re-Deploy: nur das Poller-Image (nach Code-Änderungen)"
-	@echo "  make deploy-config  - Nur docker-compose.yml/.env/grafana/ übertragen (kein Neustart)"
-	@echo "  make deploy-start   - Stack auf dem Pi (neu) starten"
-	@echo "  make clean-deploy   - Lokale Deploy-Artefakte (Tarballs) löschen"
+	@echo "Deployment to the Raspberry Pi (PI_HOST=$(PI_HOST), PI_DIR=$(PI_DIR)):"
+	@echo "  make deploy         - Full deploy: build, transfer all images, start"
+	@echo "  make deploy-poller  - Fast re-deploy: just the poller image (after code changes)"
+	@echo "  make deploy-config  - Only sync docker-compose.yml/.env/grafana/ (no restart)"
+	@echo "  make deploy-start   - (Re)start the stack on the Pi"
+	@echo "  make clean-deploy   - Remove local deploy artifacts (tarballs)"
 
-# --- Lokale Entwicklung ---
+# --- Local development ---
 
 up:
 	docker compose up -d --build
@@ -47,11 +47,11 @@ ps:
 build:
 	docker compose build poller grafana-init
 
-# --- Deployment auf den Pi ---
+# --- Deployment to the Pi ---
 #
-# Baut lokal (arm64), speichert die Images als Tarball, überträgt sie per scp
-# und lädt sie auf dem Pi via `docker load` -- kein Bauen auf dem Pi nötig.
-# Setzt passwortlosen SSH-Zugriff auf PI_HOST voraus.
+# Builds locally (arm64), saves the images as a tarball, transfers them via
+# scp and loads them on the Pi via `docker load` -- no building on the Pi
+# needed. Assumes passwordless SSH access to PI_HOST.
 
 prepare-deploy: build
 	mkdir -p $(DEPLOY_DIR)
@@ -82,9 +82,8 @@ deploy: deploy-images deploy-config deploy-start
 	@echo ""
 	@echo "Deployed. Dashboard: http://$(PI_HOST):3000"
 
-# Schneller Re-Deploy nach Code-Änderungen am Poller: nur dessen Image neu
-# bauen/übertragen (Basis-Layer sind auf dem Pi schon vorhanden -> klein & schnell)
-# statt aller vier Images.
+# Fast re-deploy after poller code changes: only rebuild/transfer its image
+# (base layers already exist on the Pi -> small & fast) instead of all four.
 deploy-poller: prepare-deploy
 	docker save se10k-poller:latest | gzip -1 > $(DEPLOY_DIR)/poller.tar.gz
 	scp $(DEPLOY_DIR)/poller.tar.gz $(PI_HOST):$(PI_DIR)/

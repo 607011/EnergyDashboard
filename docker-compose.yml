@@ -32,7 +32,7 @@ services:
     depends_on:
       - redis
     ports:
-      # Ohne 127.0.0.1-Bindung: aus dem ganzen WLAN erreichbar unter http://<Docker-Host-IP>:3000
+      # Without the 127.0.0.1 binding: reachable from the whole LAN at http://<docker-host-ip>:3000
       - "3000:3000"
     environment:
       GF_INSTALL_PLUGINS: redis-datasource
@@ -57,7 +57,7 @@ services:
         condition: service_healthy
     environment:
       GRAFANA_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
-      # Format: "login:passwort:rolle,login2:passwort2:rolle2" -- Rolle ist Viewer/Editor/Admin (Default Viewer)
+      # Format: "login:password:role,login2:password2:role2" -- role is Viewer/Editor/Admin (default Viewer)
       GRAFANA_USERS: ${GRAFANA_USERS:-}
 
 volumes:
