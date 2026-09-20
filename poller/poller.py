@@ -353,9 +353,15 @@ def poll_once(inverter: solaredge_modbus.Inverter, r: redis.Redis) -> None:
         if isinstance(values.get("instantaneous_power"), (int, float)):
             battery_power += values["instantaneous_power"]
 
+    # The two terms are measured separately (DC input vs. battery terminals, in different
+    # Modbus reads), so while the battery discharges the sum can dip below zero from
+    # converter losses and timing skew. The panels can't deliver negative power: the
+    # published value is clamped at 0, the unclamped sum is kept as power_pv_total_raw.
     power_dc = inverter_values.get("power_dc")
     if isinstance(power_dc, (int, float)):
-        inverter_values["power_pv_total"] = power_dc + battery_power
+        pv_total_raw = power_dc + battery_power
+        inverter_values["power_pv_total_raw"] = pv_total_raw
+        inverter_values["power_pv_total"] = max(0.0, pv_total_raw)
 
     # meter "power" is positive = export to the grid, negative = import from it
     # (verified against the SolarEdge app). Whatever the inverter puts out that

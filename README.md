@@ -141,6 +141,13 @@ subtracts, so it is always what the panels themselves deliver) as the best
 approximation of the panels' actual total output, the same way the SolarEdge
 app shows it as "current solar power".
 
+The two terms are measured separately (DC input vs. battery terminals, in different
+Modbus reads), so while the battery discharges the sum can dip slightly below zero
+from converter losses and timing skew (about −60 W in the evening, up to a few
+hundred watts during fast load changes). The panels can't deliver negative power,
+so `power_pv_total` is clamped at 0 and the unclamped sum is kept as
+`power_pv_total_raw`. Samples stored before this change may still be negative.
+
 **House consumption:** `house_consumption = power_ac - meter power` is the
 SolarEdge-side balance. The Hoymiles microinverters feed the house behind the
 same grid meter, so it leaves out what they supply. The poller therefore also
