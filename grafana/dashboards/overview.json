@@ -9,7 +9,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 3,
+  "version": 4,
   "refresh": "1m",
   "graphTooltip": 2,
   "time": {
@@ -154,7 +154,7 @@
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 4
+        "y": 13
       },
       "datasource": {
         "type": "redis-datasource",
@@ -207,7 +207,7 @@
         "h": 4,
         "w": 12,
         "x": 0,
-        "y": 13
+        "y": 22
       },
       "datasource": {
         "type": "redis-datasource",
@@ -253,7 +253,7 @@
         "h": 4,
         "w": 12,
         "x": 12,
-        "y": 13
+        "y": 22
       },
       "datasource": {
         "type": "redis-datasource",
@@ -297,7 +297,7 @@
         "h": 9,
         "w": 8,
         "x": 0,
-        "y": 17
+        "y": 4
       },
       "datasource": {
         "type": "redis-datasource",
@@ -341,7 +341,7 @@
         "h": 9,
         "w": 16,
         "x": 8,
-        "y": 17
+        "y": 4
       },
       "datasource": {
         "type": "redis-datasource",
