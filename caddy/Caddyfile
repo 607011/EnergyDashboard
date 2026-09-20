@@ -1,0 +1,31 @@
+# Reverse proxy in front of Grafana and the Pi-hole web UI.
+# Env vars come from docker-compose.yml / .env.
+
+# HTTPS name (used for "Sign in with Google", which requires https:// on a
+# public-TLD hostname). The certificate comes from Let's Encrypt via the DNS-01
+# challenge, delegated through ACME-DNS so no DNS-provider credentials are needed.
+{$GRAFANA_DOMAIN} {
+	tls {
+		dns acmedns {
+			username {$ACMEDNS_USERNAME}
+			password {$ACMEDNS_PASSWORD}
+			subdomain {$ACMEDNS_SUBDOMAIN}
+			server_url {$ACMEDNS_SERVER_URL}
+		}
+		# Check DNS propagation against public resolvers. The LAN resolver (Pi-hole)
+		# has a local record for this hostname, which confuses the zone lookup.
+		resolvers 1.1.1.1 8.8.8.8
+	}
+	reverse_proxy grafana:3000
+}
+
+# Short plain-HTTP names on the LAN.
+http://solar, http://solar.lan, http://dashboard.lan {
+	reverse_proxy grafana:3000
+}
+
+# Everything else arriving on port 80 (pihole, pihole.lan, the raw IP, ...) is
+# the Pi-hole web UI, which has been moved to port 8080 on the host.
+http:// {
+	reverse_proxy host.docker.internal:8080
+}

@@ -1,0 +1,98 @@
+{
+  "uid": "hoymiles-hms-1600-4wb",
+  "title": "Hoymiles: HMS-1600-4WB",
+  "description": "Einzelner Mikrowechselrichter, Teil der Anlage 'Mein Zuhause'.",
+  "tags": ["hoymiles"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "graphTooltip": 2,
+  "time": { "from": "now-24h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Aktuelle Leistung (AC)",
+      "description": "Nur dieser Wechselrichter, nicht die kombinierte Anlage. Quelle: Hoymiles S-Miles Cloud (Realtime-Burst-Kanal).",
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
+      "datasource": { "type": "redis-datasource", "uid": "solaredge-redis" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 0 }] }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "area" },
+      "targets": [
+        { "refId": "A", "type": "command", "command": "hget", "keyName": "hoymiles:hms_1600_4wb:latest", "field": "power_w" }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Panel-String 1",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 4 },
+      "datasource": { "type": "redis-datasource", "uid": "solaredge-redis" },
+      "fieldConfig": { "defaults": { "unit": "watt", "color": { "mode": "fixed", "fixedColor": "green" } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
+      "targets": [
+        { "refId": "A", "type": "command", "command": "hget", "keyName": "hoymiles:hms_1600_4wb:latest", "field": "p1_w" }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Panel-String 2",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 4 },
+      "datasource": { "type": "redis-datasource", "uid": "solaredge-redis" },
+      "fieldConfig": { "defaults": { "unit": "watt", "color": { "mode": "fixed", "fixedColor": "green" } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
+      "targets": [
+        { "refId": "A", "type": "command", "command": "hget", "keyName": "hoymiles:hms_1600_4wb:latest", "field": "p2_w" }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Panel-String 3",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 4 },
+      "datasource": { "type": "redis-datasource", "uid": "solaredge-redis" },
+      "fieldConfig": { "defaults": { "unit": "watt", "color": { "mode": "fixed", "fixedColor": "green" } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
+      "targets": [
+        { "refId": "A", "type": "command", "command": "hget", "keyName": "hoymiles:hms_1600_4wb:latest", "field": "p3_w" }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Panel-String 4",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 4 },
+      "datasource": { "type": "redis-datasource", "uid": "solaredge-redis" },
+      "fieldConfig": { "defaults": { "unit": "watt", "color": { "mode": "fixed", "fixedColor": "green" } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
+      "targets": [
+        { "refId": "A", "type": "command", "command": "hget", "keyName": "hoymiles:hms_1600_4wb:latest", "field": "p4_w" }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Leistungsverlauf: Wechselrichter & Panel-Strings",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
+      "datasource": { "type": "redis-datasource", "uid": "solaredge-redis" },
+      "fieldConfig": { "defaults": { "unit": "watt" }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "refId": "A", "type": "timeSeries", "command": "ts.range", "keyName": "ts:hoymiles:hms_1600_4wb:power_w", "legend": "AC gesamt" },
+        { "refId": "B", "type": "timeSeries", "command": "ts.range", "keyName": "ts:hoymiles:hms_1600_4wb:p1_w", "legend": "String 1" },
+        { "refId": "C", "type": "timeSeries", "command": "ts.range", "keyName": "ts:hoymiles:hms_1600_4wb:p2_w", "legend": "String 2" },
+        { "refId": "D", "type": "timeSeries", "command": "ts.range", "keyName": "ts:hoymiles:hms_1600_4wb:p3_w", "legend": "String 3" },
+        { "refId": "E", "type": "timeSeries", "command": "ts.range", "keyName": "ts:hoymiles:hms_1600_4wb:p4_w", "legend": "String 4" }
+      ]
+    }
+  ]
+}

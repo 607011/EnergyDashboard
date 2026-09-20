@@ -2,12 +2,15 @@
 
 Polls a SolarEdge SE10K-RWB48 locally via Modbus TCP (SunSpec profile),
 writes the values to Redis, and visualizes them in a Grafana dashboard —
-completely without the SolarEdge cloud.
+completely without the SolarEdge cloud. Also polls any Hoymiles WB-series
+microinverters via the Hoymiles cloud (see below for why that one *does*
+need a cloud) so their history is preserved locally too.
 
 Automatically detected and logged:
 - the inverter itself
 - attached energy meters (if present)
 - attached batteries (if present, e.g. SolarEdge Home Battery)
+- any Hoymiles stations configured under `HOYMILES_*` (see [Hoymiles microinverters](#hoymiles-microinverters))
 
 ## Setup
 
@@ -53,6 +56,9 @@ SolarEdge SE10K  --Modbus TCP-->  poller (Python)  --> Redis (redis-stack)  <-- 
 - **grafana-init**: a one-shot helper container that, after every start, uses
   the Grafana HTTP API to create the extra users listed in `GRAFANA_USERS`
   (`.env`) or update their password/role, then exits.
+- **hoymiles-poller**: polls the Hoymiles S-Miles cloud every
+  `HOYMILES_POLL_INTERVAL` seconds for each configured (or auto-discovered)
+  station and writes it to Redis the same way the SolarEdge poller does.
 
 ## Data model in Redis
 
@@ -130,16 +136,74 @@ battery's `status_label` is `Charge`) as the best approximation of the
 panels' actual total output, the same way the SolarEdge app shows it as
 "current solar power".
 
-## Dashboard
+## Hoymiles microinverters
 
-Includes: total PV power (incl. battery-charging share), AC output power,
-grid power, battery power, house consumption, temperature, status, battery
-charge level (current + history), inverter power history, lifetime yield,
-grid frequency, sun position (azimuth/elevation), and outside
-temperature/irradiance/cloud cover. Meter/battery panels stay empty if no
-corresponding devices are connected to the inverter.
+Hoymiles' plain "-W"/"-T" HMS microinverters speak a documented local
+TCP/protobuf protocol (port 10081) that projects like
+[OpenDTU](https://www.opendtu.solar/) and
+[hoymiles-wifi](https://github.com/suaveolent/hoymiles-wifi) read directly,
+no cloud needed. The **WB-series ("HiFlow Pro", e.g. HMS-1600-4WB)** is
+different: it has integrated WiFi/Bluetooth but *no* local API — the only
+channel is Bluetooth LE for initial setup, and all data goes through the
+Hoymiles S-Miles cloud. There's no free official API for it either, so
+`hoymiles-poller/hoymiles_client.py` implements the same (unofficial,
+reverse-engineered) login flow the S-Miles app uses, based on the endpoints
+documented in the MIT-licensed
+[ioBroker.hoymiles](https://github.com/Eistee82/ioBroker.hoymiles) adapter.
+A station can mix both kinds (ours does: an HMS-800W-2T and an HMS-1600-4WB),
+so everything is read uniformly through the cloud.
 
-The dashboard lives as JSON under `grafana/dashboards/solaredge.json` and is
+Since this data only exists in Hoymiles' cloud otherwise, everything read
+is stored locally in Redis with the same retention as the SolarEdge data —
+so the history survives even if that cloud service changes or goes away.
+
+Configure via `.env`:
+
+```bash
+HOYMILES_USER=you@example.com
+HOYMILES_PASSWORD=yourPassword
+# Optional "id:name,id:name" -- leave empty to auto-discover every station on the account
+HOYMILES_STATIONS=
+```
+
+The poller lists the account's stations and each station's microinverters
+(device tree), then polls two things every `HOYMILES_POLL_INTERVAL` seconds:
+
+- **per microinverter** (the cloud's realtime "burst" channel): AC power and
+  per-PV-string power → `hoymiles:<model>:latest` / `ts:hoymiles:<model>:<field>`
+  with `<model>` slugified from the model number, e.g. `hms_800w_2t`.
+  Fields: `power_w`, `p1_w` … `p4_w`.
+- **per station**: today/month/year/lifetime energy → `hoymiles:<station>:latest`
+  / `ts:hoymiles:<station>:<field>`, `<station>` slugified from the station name.
+  Fields: `power_w`, `energy_today_wh`, `energy_month_wh`, `energy_year_wh`,
+  `energy_total_wh`, `capacity_wp`, `last_data_time`. Hoymiles only reports
+  energy at station level, so these are the *combined* figures of all its
+  microinverters.
+
+The cloud isn't built for tight polling loops, so the default
+`HOYMILES_POLL_INTERVAL` is 300 seconds (5 minutes) — plenty for a
+dashboard, and a reasonable citizen towards a service with no documented
+rate limits.
+
+## Dashboards
+
+- **SolarEdge SE10K-RWB48** (`grafana/dashboards/solaredge.json`): total PV
+  power (incl. battery-charging share), AC output power, grid power,
+  battery power, house consumption, temperature, status, battery charge
+  level (current + history), inverter power history, lifetime yield, grid
+  frequency, sun position (azimuth/elevation), outside
+  temperature/irradiance/cloud cover, and today's running kWh totals.
+  Meter/battery panels stay empty if no corresponding devices are connected
+  to the inverter.
+- **Hoymiles: \<model\>** (`hoymiles-hms-*.json`): one per microinverter —
+  its own AC power, the power of each PV string, and a history graph.
+- **Hoymiles: Mein Zuhause (Gesamtanlage)** (`hoymiles-mein-zuhause.json`): the
+  station as a whole — combined power and today/month/year/lifetime yield.
+- **Gesamtübersicht: Alle PV-Systeme** (`grafana/dashboards/overview.json`):
+  side-by-side current power and lifetime yield for every system, plus one
+  chart overlaying all of their power curves.
+
+All dashboards are provisioned as JSON under `grafana/dashboards/` and
 loaded automatically on startup (Grafana provisioning); changes made in the
 Grafana UI can be saved back there via "Export → Save JSON".
 
@@ -155,6 +219,10 @@ Grafana UI can be saved back there via "Export → Save JSON".
 | `TS_RETENTION_DAYS`        | `365`              | Retention period of the raw history series  |
 | `GRAFANA_ADMIN_PASSWORD`   | `admin`            | Grafana login on first start                |
 | `GRAFANA_USERS`            | *(empty)*          | Additional Grafana users, see below         |
+| `HOYMILES_USER`            | —                  | S-Miles account email                       |
+| `HOYMILES_PASSWORD`        | —                  | S-Miles account password                    |
+| `HOYMILES_STATIONS`        | *(empty)*          | `id:name,...` override; empty = auto-discover all stations |
+| `HOYMILES_POLL_INTERVAL`   | `300`              | Interval between two cloud polls (seconds)  |
 
 The poller automatically reconnects with exponential backoff if the
 inverter is briefly unreachable (e.g. at night in standby, or during
@@ -162,11 +230,12 @@ network issues).
 
 ### Additional Grafana users (`GRAFANA_USERS`)
 
-Format in `.env`, comma-separated, each entry `login:password:role`
-(role optional, defaults to `Viewer`):
+Format in `.env`, comma-separated, each entry `login:password:role:email`
+(role optional, defaults to `Viewer`; email optional, but required for
+[Sign in with Google](#sign-in-with-google) to find the user):
 
 ```bash
-GRAFANA_USERS=family:aSecurePassword:Viewer,partner:anotherPassword:Editor
+GRAFANA_USERS=family:aSecurePassword:Viewer,partner:anotherPassword:Editor:partner@example.com
 ```
 
 On every `docker compose up`, the `grafana-init` container creates these
@@ -179,3 +248,79 @@ start (see above) — `GRAFANA_USERS`, on the other hand, is re-applied on
 *every* start, since it's provisioned via the running API rather than only
 set at first boot. So a changed password in `.env` for an existing user is
 picked up on the next `docker compose up`.
+
+### Sign in with Google
+
+Grafana can offer a "Sign in with Google" button next to the password login.
+It's prepared in `docker-compose.yml` and stays off until you enable it in `.env`:
+
+1. In the [Google Cloud Console](https://console.cloud.google.com/apis/credentials),
+   create an *OAuth client ID* of type **Web application** and add
+   `<GRAFANA_ROOT_URL>login/google` as an authorized redirect URI.
+2. Put the values into `.env`:
+
+   ```bash
+   GRAFANA_ROOT_URL=http://localhost:3000/
+   GOOGLE_OAUTH_ENABLED=true
+   GOOGLE_CLIENT_ID=1234567890-abc.apps.googleusercontent.com
+   GOOGLE_CLIENT_SECRET=...
+   ```
+
+3. Give each person who may log in a Grafana user *with their Google email*
+   (`login:password:role:email` in `GRAFANA_USERS`), then `docker compose up -d`.
+
+By default (`GOOGLE_ALLOW_SIGN_UP=false`) only Grafana users that already exist,
+matched by email, can log in with Google; nobody else gets an account
+automatically. `GOOGLE_ALLOWED_DOMAINS` can additionally restrict to Google
+Workspace domains — never set it to `gmail.com`, that would admit every Gmail user.
+
+**Redirect URI restriction:** Google only accepts `https://` redirect URIs on a
+real public domain, or `http://localhost`. A LAN address like
+`http://192.168.0.2:3000` or `http://solar.lan` is rejected. So this works out of
+the box on the machine running Docker (`http://localhost:3000`, also through an
+SSH tunnel: `ssh -L 3000:localhost:3000 <host>`). For direct LAN access you need a
+public domain name resolving to the host (e.g. via local DNS) with a valid
+HTTPS certificate in front of Grafana.
+
+### HTTPS reverse proxy (Caddy)
+
+Google login needs `https://` on a public-TLD hostname (see above), and
+short names without `:3000` need something on port 80. The optional `caddy`
+service (compose profile `proxy`) provides both:
+
+- `https://<GRAFANA_DOMAIN>/` → Grafana, with a Let's Encrypt certificate
+- `http://solar`, `http://solar.lan`, `http://dashboard.lan` → Grafana
+- every other request on port 80 (e.g. `http://pihole/admin`) → the Pi-hole web UI
+
+The hostname only has to *look* right to Google (public TLD); it doesn't have
+to be reachable from the internet. Point it at the Docker host with a local DNS
+record (e.g. in Pi-hole: `smart.example.com → 192.168.0.2`). The certificate is
+obtained via the DNS-01 challenge, delegated through
+[ACME-DNS](https://github.com/joohoi/acme-dns), so no DNS-provider credentials
+are stored — useful for providers without an API (e.g. Strato).
+
+Setup:
+
+1. Register an ACME-DNS account and note the response:
+
+   ```bash
+   curl -X POST https://auth.acme-dns.io/register
+   ```
+
+2. At your DNS provider, create a CNAME
+   `_acme-challenge.<GRAFANA_DOMAIN>` → the `fulldomain` from that response.
+3. In `.env`: `GRAFANA_DOMAIN`, `ACMEDNS_USERNAME`, `ACMEDNS_PASSWORD`,
+   `ACMEDNS_SUBDOMAIN`, `GRAFANA_ROOT_URL=https://<GRAFANA_DOMAIN>/`, and
+   `COMPOSE_PROFILES=proxy`.
+4. **On a host that runs Pi-hole**, it occupies ports 80/443, so move its web
+   UI first (the DNS server keeps running, but FTL restarts briefly):
+
+   ```bash
+   sudo pihole-FTL --config webserver.port '8080o,8443os,[::]:8080o,[::]:8443os'
+   sudo systemctl restart pihole-FTL
+   ```
+
+5. `docker compose up -d` (or `make deploy`).
+
+The Pi-hole UI stays reachable through the proxy over plain HTTP
+(`http://pihole/admin`); its own HTTPS listener is now on port 8443.

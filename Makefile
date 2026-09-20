@@ -4,7 +4,7 @@
 PI_HOST      ?= 192.168.0.2
 PI_DIR       ?= ~/se10k
 DEPLOY_DIR   := deploy
-IMAGES       := redis/redis-stack-server:latest grafana/grafana:11.3.0 se10k-poller:latest se10k-grafana-init:latest
+IMAGES       := redis/redis-stack-server:latest grafana/grafana:11.3.0 se10k-poller:latest se10k-grafana-init:latest se10k-hoymiles-poller:latest se10k-caddy:latest
 COMPOSE_SRC  := docker-compose.yml
 COMPOSE_DST  := $(DEPLOY_DIR)/docker-compose.yml
 
@@ -45,7 +45,7 @@ ps:
 	docker compose ps
 
 build:
-	docker compose build poller grafana-init
+	docker compose --profile proxy build poller grafana-init hoymiles-poller caddy
 
 # --- Deployment to the Pi ---
 #
@@ -57,6 +57,8 @@ prepare-deploy: build
 	mkdir -p $(DEPLOY_DIR)
 	sed -e 's|build: ./poller|image: se10k-poller:latest|' \
 	    -e 's|build: ./grafana-init|image: se10k-grafana-init:latest|' \
+	    -e 's|build: ./hoymiles-poller|image: se10k-hoymiles-poller:latest|' \
+	    -e 's|build: ./caddy|image: se10k-caddy:latest|' \
 	    $(COMPOSE_SRC) > $(COMPOSE_DST)
 	cp .env $(DEPLOY_DIR)/.env
 	rm -rf $(DEPLOY_DIR)/grafana
@@ -67,6 +69,9 @@ deploy-config: prepare-deploy
 	scp -q $(COMPOSE_DST) $(DEPLOY_DIR)/.env $(PI_HOST):$(PI_DIR)/
 	ssh $(PI_HOST) "rm -rf $(PI_DIR)/grafana"
 	scp -q -r $(DEPLOY_DIR)/grafana $(PI_HOST):$(PI_DIR)/
+	ssh $(PI_HOST) "rm -rf $(PI_DIR)/caddy"
+	mkdir -p $(DEPLOY_DIR)/caddy && cp caddy/Caddyfile $(DEPLOY_DIR)/caddy/Caddyfile
+	scp -q -r $(DEPLOY_DIR)/caddy $(PI_HOST):$(PI_DIR)/
 
 deploy-images: prepare-deploy
 	docker save $(IMAGES) | gzip -1 > $(DEPLOY_DIR)/images.tar.gz
@@ -75,8 +80,8 @@ deploy-images: prepare-deploy
 	rm -f $(DEPLOY_DIR)/images.tar.gz
 
 deploy-start:
-	ssh $(PI_HOST) "cd $(PI_DIR) && docker compose up -d"
-	ssh $(PI_HOST) "cd $(PI_DIR) && docker compose ps"
+	ssh $(PI_HOST) "cd $(PI_DIR) && docker compose --profile proxy up -d"
+	ssh $(PI_HOST) "cd $(PI_DIR) && docker compose --profile proxy ps"
 
 deploy: deploy-images deploy-config deploy-start
 	@echo ""

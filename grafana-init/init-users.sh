@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Creates/updates Grafana users from GRAFANA_USERS (format: "login:password:role,login2:password2:role2").
-# Role is one of Viewer/Editor/Admin, defaults to Viewer if omitted.
+# Creates/updates Grafana users from GRAFANA_USERS
+# (format: "login:password:role:email,login2:password2:role2:email2").
+# Role is one of Viewer/Editor/Admin, defaults to Viewer if omitted. The email is
+# optional; it's what "Sign in with Google" matches an existing Grafana user by.
 set -uo pipefail
 
 ADMIN_USER="admin"
@@ -21,9 +23,10 @@ for entry in "${ENTRIES[@]}"; do
   password="$(cut -d: -f2 <<< "$entry")"
   role="$(cut -d: -f3 <<< "$entry")"
   role="${role:-Viewer}"
+  email="$(cut -d: -f4 <<< "$entry")"
 
   if [ -z "$login" ] || [ -z "$password" ]; then
-    echo "Skipping invalid entry: '$entry' (expected login:password[:role])"
+    echo "Skipping invalid entry: '$entry' (expected login:password[:role[:email]])"
     continue
   fi
 
@@ -32,7 +35,7 @@ for entry in "${ENTRIES[@]}"; do
   http_code=$(curl -s -o /tmp/resp.json -w "%{http_code}" -u "$ADMIN_USER:$ADMIN_PASSWORD" \
     -X POST "$BASE_URL/api/admin/users" \
     -H "Content-Type: application/json" \
-    -d "$(jq -nc --arg name "$login" --arg login "$login" --arg password "$password" '{name:$name, login:$login, password:$password, OrgId:1}')")
+    -d "$(jq -nc --arg name "$login" --arg login "$login" --arg email "$email" --arg password "$password" '{name:$name, login:$login, email:$email, password:$password, OrgId:1}')")
 
   if [ "$http_code" = "200" ]; then
     user_id=$(jq -r '.id' /tmp/resp.json)
@@ -48,6 +51,13 @@ for entry in "${ENTRIES[@]}"; do
       -H "Content-Type: application/json" \
       -d "$(jq -nc --arg password "$password" '{password:$password}')" > /dev/null
     echo "    password synced (id=$user_id)"
+  fi
+
+  if [ -n "$email" ]; then
+    curl -s -u "$ADMIN_USER:$ADMIN_PASSWORD" -X PUT "$BASE_URL/api/users/$user_id" \
+      -H "Content-Type: application/json" \
+      -d "$(jq -nc --arg name "$login" --arg login "$login" --arg email "$email" '{name:$name, login:$login, email:$email}')" > /dev/null
+    echo "    email set to $email"
   fi
 
   curl -s -u "$ADMIN_USER:$ADMIN_PASSWORD" -X PATCH "$BASE_URL/api/org/users/$user_id" \

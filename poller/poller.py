@@ -10,6 +10,7 @@ import os
 import signal
 import time
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 import redis
 import requests
@@ -52,6 +53,9 @@ COMPACTION_RULES = [
 
 LAT = float(os.environ["LAT"]) if os.environ.get("LAT") else None
 LON = float(os.environ["LON"]) if os.environ.get("LON") else None
+
+# Local timezone for "today" boundaries in the daily energy totals below.
+TIMEZONE = ZoneInfo(os.environ.get("TIMEZONE", "UTC"))
 
 # Open-Meteo's "current" block is itself only refreshed every 15 minutes
 # server-side, so polling more often than that just wastes requests.
@@ -204,6 +208,83 @@ def ensure_compaction_rules(r: redis.Redis) -> None:
                 raise
 
 
+_DAILY_STATE_KEY = "internal:daily_accumulator"
+
+
+def update_daily_totals(
+    r: redis.Redis,
+    ts_ms: int,
+    pv_power: float | None,
+    house_power: float | None,
+    export_wh: float | None,
+    import_wh: float | None,
+) -> None:
+    """Running kWh-so-far for today (local time), persisted in Redis so it
+    survives poller restarts. Power metrics (pv/house) have no hardware
+    energy counter, so they're trapezoidally integrated poll by poll; grid
+    export/import already have one (export_energy_active/import_energy_active),
+    so today's total there is just today's counter minus its value at midnight.
+    """
+    today = datetime.fromtimestamp(ts_ms / 1000, TIMEZONE).strftime("%Y-%m-%d")
+    state = r.hgetall(_DAILY_STATE_KEY)
+
+    if state.get("date") != today:
+        state = {
+            "date": today,
+            "pv_wh": "0",
+            "house_wh": "0",
+            "last_ts": str(ts_ms),
+            "last_pv_power": str(pv_power or 0.0),
+            "last_house_power": str(house_power or 0.0),
+            "export_ref_wh": str(export_wh) if export_wh is not None else "",
+            "import_ref_wh": str(import_wh) if import_wh is not None else "",
+        }
+
+    pv_wh = float(state["pv_wh"])
+    house_wh = float(state["house_wh"])
+    dt_hours = (ts_ms - int(state["last_ts"])) / 3_600_000.0
+    if dt_hours > 0:
+        if pv_power is not None:
+            pv_wh += (float(state["last_pv_power"]) + pv_power) / 2.0 * dt_hours
+        if house_power is not None:
+            house_wh += (float(state["last_house_power"]) + house_power) / 2.0 * dt_hours
+
+    state["pv_wh"] = str(pv_wh)
+    state["house_wh"] = str(house_wh)
+    state["last_ts"] = str(ts_ms)
+    state["last_pv_power"] = str(pv_power if pv_power is not None else state["last_pv_power"])
+    state["last_house_power"] = str(house_power if house_power is not None else state["last_house_power"])
+    if state.get("export_ref_wh", "") == "" and export_wh is not None:
+        state["export_ref_wh"] = str(export_wh)
+    if state.get("import_ref_wh", "") == "" and import_wh is not None:
+        state["import_ref_wh"] = str(import_wh)
+
+    r.hset(_DAILY_STATE_KEY, mapping=state)
+
+    export_today_wh = (
+        export_wh - float(state["export_ref_wh"])
+        if export_wh is not None and state.get("export_ref_wh")
+        else 0.0
+    )
+    import_today_wh = (
+        import_wh - float(state["import_ref_wh"])
+        if import_wh is not None and state.get("import_ref_wh")
+        else 0.0
+    )
+
+    log_device(
+        r,
+        "daily",
+        {
+            "pv_wh": round(pv_wh, 1),
+            "house_wh": round(house_wh, 1),
+            "export_wh": round(export_today_wh, 1),
+            "import_wh": round(import_today_wh, 1),
+        },
+        ts_ms,
+    )
+
+
 def fetch_weather(lat: float, lon: float) -> dict:
     """Current outside temperature and solar irradiance from Open-Meteo (free, no API key)."""
     response = requests.get(
@@ -257,17 +338,27 @@ def poll_once(inverter: solaredge_modbus.Inverter, r: redis.Redis) -> None:
     # isn't exported must have gone to the house -- and whatever is imported
     # went to the house too -- so this holds regardless of charge/discharge state.
     meter_power = 0.0
+    export_wh = None
+    import_wh = None
     for meter_id, meter in inverter.meters().items():
         values = apply_scale_factors(meter)
         log_device(r, f"meter:{meter_id.lower()}", values, ts_ms)
         if isinstance(values.get("power"), (int, float)):
             meter_power += values["power"]
+        if isinstance(values.get("export_energy_active"), (int, float)):
+            export_wh = (export_wh or 0.0) + values["export_energy_active"]
+        if isinstance(values.get("import_energy_active"), (int, float)):
+            import_wh = (import_wh or 0.0) + values["import_energy_active"]
 
     power_ac = inverter_values.get("power_ac")
+    house_consumption = None
     if isinstance(power_ac, (int, float)):
-        inverter_values["house_consumption"] = power_ac - meter_power
+        house_consumption = power_ac - meter_power
+        inverter_values["house_consumption"] = house_consumption
 
     log_device(r, "inverter", inverter_values, ts_ms)
+
+    update_daily_totals(r, ts_ms, inverter_values.get("power_pv_total"), house_consumption, export_wh, import_wh)
 
     if LAT is not None and LON is not None:
         azimuth, elevation = solar_position(datetime.now(timezone.utc), LAT, LON)
