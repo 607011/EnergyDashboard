@@ -6,7 +6,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "refresh": "30s",
   "graphTooltip": 2,
   "time": {
@@ -74,7 +74,7 @@
       "id": 2,
       "type": "stat",
       "title": "Netzleistung",
-      "description": "Positiv = Einspeisung ins \u00f6ffentliche Netz, negativ = Bezug aus dem Netz. Leer, falls kein Energy Meter installiert ist.",
+      "description": "Positiv = Einspeisung ins öffentliche Netz, negativ = Bezug aus dem Netz. Leer, falls kein Energy Meter installiert ist.",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -180,7 +180,7 @@
       "id": 4,
       "type": "stat",
       "title": "AC-Ausgangsleistung",
-      "description": "Was der Wechselrichter tats\u00e4chlich als Wechselstrom ausgibt (an Haus + Netz), ohne den direkt in die Batterie geladenen Anteil.",
+      "description": "Was der Wechselrichter tatsächlich als Wechselstrom ausgibt (an Haus + Netz), ohne den direkt in die Batterie geladenen Anteil.",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -671,7 +671,7 @@
       "id": 14,
       "type": "stat",
       "title": "Sonnenstand: Azimut",
-      "description": "Himmelsrichtung der Sonne, im Uhrzeigersinn ab Norden (0\u00b0=N, 90\u00b0=O, 180\u00b0=S, 270\u00b0=W).",
+      "description": "Himmelsrichtung der Sonne, im Uhrzeigersinn ab Norden (0°=N, 90°=O, 180°=S, 270°=W).",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -716,7 +716,7 @@
       "id": 15,
       "type": "stat",
       "title": "Sonnenstand: Elevation",
-      "description": "H\u00f6he der Sonne \u00fcber dem Horizont. Negativ = Sonne ist untergegangen.",
+      "description": "Höhe der Sonne über dem Horizont. Negativ = Sonne ist untergegangen.",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -770,7 +770,7 @@
       "id": 16,
       "type": "timeseries",
       "title": "Sonnenstand: Azimut & Elevation",
-      "description": "Azimut (links, 0-360\u00b0) und Elevation (rechts, -90..90\u00b0) in einem Panel, getrennte Achsen wegen unterschiedlicher Wertebereiche.",
+      "description": "Azimut (links, 0-360°) und Elevation (rechts, -90..90°) in einem Panel, getrennte Achsen wegen unterschiedlicher Wertebereiche.",
       "gridPos": {
         "h": 8,
         "w": 24,
@@ -857,7 +857,7 @@
     {
       "id": 17,
       "type": "stat",
-      "title": "Au\u00dfentemperatur",
+      "title": "Außentemperatur",
       "description": "Quelle: Open-Meteo (open-meteo.com), Aktualisierung alle 15 Minuten.",
       "gridPos": {
         "h": 4,
@@ -939,7 +939,7 @@
     {
       "id": 19,
       "type": "stat",
-      "title": "Bew\u00f6lkung",
+      "title": "Bewölkung",
       "description": "Quelle: Open-Meteo, Aktualisierung alle 15 Minuten.",
       "gridPos": {
         "h": 4,
@@ -981,7 +981,7 @@
       "id": 20,
       "type": "timeseries",
       "title": "Wetter: Temperatur & Einstrahlung",
-      "description": "Temperatur (links, \u00b0C) und Sonneneinstrahlung (rechts, W/m\u00b2). Quelle: Open-Meteo.",
+      "description": "Temperatur (links, °C) und Sonneneinstrahlung (rechts, W/m²). Quelle: Open-Meteo.",
       "gridPos": {
         "h": 8,
         "w": 24,
@@ -1061,7 +1061,7 @@
       "id": 21,
       "type": "stat",
       "title": "Hausverbrauch",
-      "description": "Energiebilanz: AC-Ausgangsleistung minus Netzleistung (positiv=Einspeisung). Was der Wechselrichter nicht ins Netz exportiert bzw. was zus\u00e4tzlich importiert wird, geht ins Haus.",
+      "description": "Energiebilanz: AC-Ausgangsleistung minus Netzleistung (positiv=Einspeisung). Was der Wechselrichter nicht ins Netz exportiert bzw. was zusätzlich importiert wird, geht ins Haus – nur die SolarEdge-Seite: Was die Hoymiles-Wechselrichter ins Haus speisen, ist nicht enthalten (der gesamte Hausverbrauch steht in der Gesamtübersicht).",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -1101,7 +1101,7 @@
       "id": 22,
       "type": "timeseries",
       "title": "Hausverbrauch (Verlauf)",
-      "description": "Berechnet aus AC-Ausgangsleistung minus Netzleistung.",
+      "description": "Berechnet aus AC-Ausgangsleistung minus Netzleistung – nur die SolarEdge-Seite: Was die Hoymiles-Wechselrichter ins Haus speisen, ist nicht enthalten (der gesamte Hausverbrauch steht in der Gesamtübersicht).",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -1141,7 +1141,7 @@
       "id": 23,
       "type": "stat",
       "title": "Heute: PV-Erzeugung",
-      "description": "Seit Mitternacht (lokale Zeit) trapezintegrierte PV-Gesamtleistung. L\u00e4uft \u00fcber den Tag hoch, setzt sich um Mitternacht zur\u00fcck. \u00dcbersteht Poller-Neustarts (Stand wird in Redis gehalten).",
+      "description": "Seit Mitternacht (lokale Zeit) trapezintegrierte PV-Gesamtleistung. Läuft über den Tag hoch, setzt sich um Mitternacht zurück. Übersteht Poller-Neustarts (Stand wird in Redis gehalten).",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -1186,7 +1186,7 @@
       "id": 24,
       "type": "stat",
       "title": "Heute: Hausverbrauch",
-      "description": "Seit Mitternacht (lokale Zeit) trapezintegrierter Hausverbrauch.",
+      "description": "Seit Mitternacht (lokale Zeit) trapezintegrierter Hausverbrauch – nur die SolarEdge-Seite: Was die Hoymiles-Wechselrichter ins Haus speisen, ist nicht enthalten (der gesamte Hausverbrauch steht in der Gesamtübersicht).",
       "gridPos": {
         "h": 4,
         "w": 6,

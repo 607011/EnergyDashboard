@@ -105,7 +105,13 @@ class HoymilesClient:
             timeout=REQUEST_TIMEOUT,
         )
         response.raise_for_status()
-        return response.json()
+        result = response.json()
+        # An expired session token is *not* reported as HTTP 401: the cloud answers 200 with a
+        # non-zero status and "token verify error" (it expires after about 24 hours).
+        if auth and isinstance(result, dict) and result.get("status") != "0" \
+                and "token" in str(result.get("message", "")).lower():
+            raise HoymilesAuthError(f"session token rejected: {result.get('message')}")
+        return result
 
     def login(self) -> None:
         # Phase 1: region -- non-fatal on failure, we just keep the default host.

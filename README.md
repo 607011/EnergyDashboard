@@ -136,10 +136,19 @@ the SE10K-RWB48):** the battery hangs off the same DC bus as the panels, but
 *before* the inverter's actual DC/AC conversion stage. So while the battery
 is charging, `power_dc` only shows what's left over for AC conversion — not
 the panels' total output. The poller therefore additionally computes
-`power_pv_total = power_dc + battery charging power` (only while the
-battery's `status_label` is `Charge`) as the best approximation of the
-panels' actual total output, the same way the SolarEdge app shows it as
-"current solar power".
+`power_pv_total = power_dc + battery power` (signed: charging adds, discharging
+subtracts, so it is always what the panels themselves deliver) as the best
+approximation of the panels' actual total output, the same way the SolarEdge
+app shows it as "current solar power".
+
+**House consumption:** `house_consumption = power_ac - meter power` is the
+SolarEdge-side balance. The Hoymiles microinverters feed the house behind the
+same grid meter, so it leaves out what they supply. The poller therefore also
+writes `house_consumption_total`, which adds the current power of every Hoymiles
+microinverter (read from Redis, so `hoymiles-poller` must be running). Hoymiles
+values older than `HOYMILES_MAX_AGE` seconds (default 900) are ignored, and
+without any fresh Hoymiles data no total is written. Since the cloud data is
+up to 5 minutes old, that share of the total is a little behind.
 
 ## Hoymiles microinverters
 

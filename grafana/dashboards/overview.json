@@ -2,74 +2,246 @@
   "uid": "pv-overview",
   "title": "Gesamtübersicht: Alle PV-Systeme",
   "description": "Fasst SolarEdge SE10K und beide Hoymiles-Mikrowechselrichter (Anlage 'Mein Zuhause') auf einem Dashboard zusammen.",
-  "tags": ["solaredge", "hoymiles", "overview"],
+  "tags": [
+    "solaredge",
+    "hoymiles",
+    "overview"
+  ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 3,
   "refresh": "1m",
   "graphTooltip": 2,
-  "time": { "from": "now-24h", "to": "now" },
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
   "panels": [
     {
       "id": 1,
       "type": "stat",
       "title": "SolarEdge: PV-Gesamtleistung",
-      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 0 },
-      "datasource": { "type": "redis-datasource", "uid": "solaredge-redis" },
-      "fieldConfig": { "defaults": { "unit": "watt", "color": { "mode": "fixed", "fixedColor": "green" } }, "overrides": [] },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "area" },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
       "targets": [
-        { "refId": "A", "type": "command", "command": "hget", "keyName": "solaredge:inverter:latest", "field": "power_pv_total" }
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "solaredge:inverter:latest",
+          "field": "power_pv_total"
+        }
       ]
     },
     {
       "id": 2,
       "type": "stat",
       "title": "Hoymiles: HMS-800W-2T",
-      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 0 },
-      "datasource": { "type": "redis-datasource", "uid": "solaredge-redis" },
-      "fieldConfig": { "defaults": { "unit": "watt", "color": { "mode": "fixed", "fixedColor": "green" } }, "overrides": [] },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "area" },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 0
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
       "targets": [
-        { "refId": "A", "type": "command", "command": "hget", "keyName": "hoymiles:hms_800w_2t:latest", "field": "power_w" }
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "hoymiles:hms_800w_2t:latest",
+          "field": "power_w"
+        }
       ]
     },
     {
       "id": 3,
       "type": "stat",
       "title": "Hoymiles: HMS-1600-4WB",
-      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 0 },
-      "datasource": { "type": "redis-datasource", "uid": "solaredge-redis" },
-      "fieldConfig": { "defaults": { "unit": "watt", "color": { "mode": "fixed", "fixedColor": "green" } }, "overrides": [] },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "area" },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 0
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
       "targets": [
-        { "refId": "A", "type": "command", "command": "hget", "keyName": "hoymiles:hms_1600_4wb:latest", "field": "power_w" }
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "hoymiles:hms_1600_4wb:latest",
+          "field": "power_w"
+        }
       ]
     },
     {
       "id": 4,
       "type": "timeseries",
       "title": "Leistung aller Systeme im Vergleich",
-      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 4 },
-      "datasource": { "type": "redis-datasource", "uid": "solaredge-redis" },
-      "fieldConfig": { "defaults": { "unit": "watt" }, "overrides": [] },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
       "targets": [
-        { "refId": "A", "type": "timeSeries", "command": "ts.range", "keyName": "ts:inverter:power_pv_total", "legend": "SolarEdge SE10K" },
-        { "refId": "B", "type": "timeSeries", "command": "ts.range", "keyName": "ts:hoymiles:hms_800w_2t:power_w", "legend": "Hoymiles: HMS-800W-2T" },
-        { "refId": "C", "type": "timeSeries", "command": "ts.range", "keyName": "ts:hoymiles:hms_1600_4wb:power_w", "legend": "Hoymiles: HMS-1600-4WB" }
+        {
+          "refId": "A",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:inverter:power_pv_total",
+          "legend": "SolarEdge SE10K"
+        },
+        {
+          "refId": "B",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:hoymiles:hms_800w_2t:power_w",
+          "legend": "Hoymiles: HMS-800W-2T"
+        },
+        {
+          "refId": "C",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:hoymiles:hms_1600_4wb:power_w",
+          "legend": "Hoymiles: HMS-1600-4WB"
+        }
       ]
     },
     {
       "id": 5,
       "type": "stat",
       "title": "Gesamtertrag: SolarEdge SE10K",
-      "gridPos": { "h": 4, "w": 12, "x": 0, "y": 13 },
-      "datasource": { "type": "redis-datasource", "uid": "solaredge-redis" },
-      "fieldConfig": { "defaults": { "unit": "none", "decimals": 0, "displayName": "Wh gesamt", "color": { "mode": "fixed", "fixedColor": "green" } }, "overrides": [] },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 0,
+        "y": 13
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "displayName": "Wh gesamt",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
       "targets": [
-        { "refId": "A", "type": "command", "command": "hget", "keyName": "solaredge:inverter:latest", "field": "energy_total" }
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "solaredge:inverter:latest",
+          "field": "energy_total"
+        }
       ]
     },
     {
@@ -77,12 +249,135 @@
       "type": "stat",
       "title": "Gesamtertrag: Hoymiles Mein Zuhause",
       "description": "Kombinierter Lifetime-Ertrag beider Hoymiles-Mikrowechselrichter -- die Hoymiles-Cloud liefert Ertragszahlen nur pro Anlage, nicht pro Einzelgeraet.",
-      "gridPos": { "h": 4, "w": 12, "x": 12, "y": 13 },
-      "datasource": { "type": "redis-datasource", "uid": "solaredge-redis" },
-      "fieldConfig": { "defaults": { "unit": "watth", "color": { "mode": "fixed", "fixedColor": "green" } }, "overrides": [] },
-      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none" },
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 12,
+        "y": 13
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watth",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
       "targets": [
-        { "refId": "A", "type": "command", "command": "hget", "keyName": "hoymiles:mein_zuhause:latest", "field": "energy_total_wh" }
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "hoymiles:mein_zuhause:latest",
+          "field": "energy_total_wh"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Hausverbrauch",
+      "description": "Gesamter Hausverbrauch: SolarEdge-Bilanz (AC-Ausgangsleistung minus Netzleistung) plus die Leistung der beiden Hoymiles-Wechselrichter, die hinter demselben Netzzähler ins Haus einspeisen. Der Hoymiles-Anteil stammt aus der Cloud und ist bis zu 5 Minuten alt; ohne frische Hoymiles-Daten (älter als 15 Minuten) erscheint kein Wert.",
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 0,
+        "y": 17
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "solaredge:inverter:latest",
+          "field": "house_consumption_total"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Hausverbrauch (Verlauf)",
+      "description": "Gesamter Hausverbrauch: SolarEdge-Bilanz (AC-Ausgangsleistung minus Netzleistung) plus die Leistung der beiden Hoymiles-Wechselrichter, die hinter demselben Netzzähler ins Haus einspeisen. Der Hoymiles-Anteil stammt aus der Cloud und ist bis zu 5 Minuten alt; ohne frische Hoymiles-Daten (älter als 15 Minuten) erscheint kein Wert.",
+      "gridPos": {
+        "h": 9,
+        "w": 16,
+        "x": 8,
+        "y": 17
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:inverter:house_consumption_total",
+          "legend": "Hausverbrauch"
+        }
       ]
     }
   ]

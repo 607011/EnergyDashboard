@@ -60,6 +60,8 @@ TIMEZONE = ZoneInfo(os.environ.get("TIMEZONE", "UTC"))
 # Open-Meteo's "current" block is itself only refreshed every 15 minutes
 # server-side, so polling more often than that just wastes requests.
 WEATHER_INTERVAL = float(os.environ.get("WEATHER_INTERVAL", "900"))
+# Hoymiles values older than this (seconds) are ignored when adding them to the house consumption.
+HOYMILES_MAX_AGE = float(os.environ.get("HOYMILES_MAX_AGE", "900"))
 WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
 
 MAX_BACKOFF = 60
@@ -306,6 +308,28 @@ def fetch_weather(lat: float, lon: float) -> dict:
     }
 
 
+def hoymiles_power(r: redis.Redis, now_ms: int) -> float | None:
+    """Combined AC power (W) of all Hoymiles microinverters, as last stored by hoymiles-poller.
+
+    Per-inverter hashes are recognised by their per-string field p1_w; the station hash holds
+    the same power again as a total and must not be counted twice. Returns None if no
+    inverter has fresh data (cloud outage, hoymiles-poller not running).
+    """
+    total = None
+    for key in r.scan_iter(match="hoymiles:*:latest"):
+        h = r.hgetall(key)
+        if "p1_w" not in h:
+            continue
+        try:
+            fresh = now_ms - int(h["updated_at"]) <= HOYMILES_MAX_AGE * 1000
+            power = float(h.get("power_w") or 0)
+        except (KeyError, ValueError):
+            continue
+        if fresh:
+            total = (total or 0.0) + power
+    return total
+
+
 def poll_once(inverter: solaredge_modbus.Inverter, r: redis.Redis) -> None:
     ts_ms = int(time.time() * 1000)
 
@@ -355,6 +379,11 @@ def poll_once(inverter: solaredge_modbus.Inverter, r: redis.Redis) -> None:
     if isinstance(power_ac, (int, float)):
         house_consumption = power_ac - meter_power
         inverter_values["house_consumption"] = house_consumption
+        # The Hoymiles microinverters feed the house behind the same grid meter, so the
+        # SolarEdge balance (AC power minus meter) leaves out what they supply.
+        hoymiles = hoymiles_power(r, ts_ms)
+        if hoymiles is not None:
+            inverter_values["house_consumption_total"] = house_consumption + hoymiles
 
     log_device(r, "inverter", inverter_values, ts_ms)
 

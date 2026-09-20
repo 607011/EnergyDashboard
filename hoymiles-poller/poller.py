@@ -149,6 +149,8 @@ def poll_once(client: HoymilesClient, r: redis.Redis, stations: dict[int, str], 
             if exc.response is not None and exc.response.status_code == 401:
                 raise  # let the caller re-login
             log.warning("Station %s (%s): realtime request failed: %s", station_id, name, exc)
+        except HoymilesAuthError:
+            raise  # let the caller re-login
         except Exception:
             log.exception("Station %s (%s): failed to fetch station realtime data", station_id, name)
 
@@ -164,6 +166,8 @@ def poll_once(client: HoymilesClient, r: redis.Redis, stations: dict[int, str], 
                 raise
             log.warning("Station %s (%s): burst request failed: %s", station_id, name, exc)
             continue
+        except HoymilesAuthError:
+            raise
         except Exception:
             log.exception("Station %s (%s): failed to fetch per-inverter power", station_id, name)
             continue
