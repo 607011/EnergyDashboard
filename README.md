@@ -11,6 +11,7 @@ Automatically detected and logged:
 - attached energy meters (if present)
 - attached batteries (if present, e.g. SolarEdge Home Battery)
 - any Hoymiles stations configured under `HOYMILES_*` (see [Hoymiles microinverters](#hoymiles-microinverters))
+- a Weishaupt heat pump, if `WEISHAUPT_HOST` is set (see [Weishaupt heat pump](#weishaupt-heat-pump))
 
 ## Setup
 
@@ -59,6 +60,10 @@ SolarEdge SE10K  --Modbus TCP-->  poller (Python)  --> Redis (redis-stack)  <-- 
 - **hoymiles-poller**: polls the Hoymiles S-Miles cloud every
   `HOYMILES_POLL_INTERVAL` seconds for each configured (or auto-discovered)
   station and writes it to Redis the same way the SolarEdge poller does.
+- **weishaupt-poller**: reads a Weishaupt heat pump via Modbus TCP every
+  `WEISHAUPT_POLL_INTERVAL` seconds; idles if `WEISHAUPT_HOST` is empty.
+- **meter-form**: a small web form for entering the heat pump's electricity
+  meter reading by hand (see [Weishaupt heat pump](#weishaupt-heat-pump)).
 
 ## Data model in Redis
 
@@ -185,6 +190,60 @@ The cloud isn't built for tight polling loops, so the default
 dashboard, and a reasonable citizen towards a service with no documented
 rate limits.
 
+## Weishaupt heat pump
+
+`weishaupt-poller` reads a Weishaupt heat pump (Geoblock WGB, and the
+compatible WAB/WBB/WSB) over Modbus TCP, using Weishaupt's *Datenpunktliste
+Modbus TCP (WWP)*, document 83807301. On the heat pump's system device, turn on
+*Settings → Modbus TCP → Access* (port 502, slave address 1). Weishaupt lets you
+use either the WEM portal or Modbus TCP, not both. The interface is
+unencrypted, so keep the heat pump on a trusted network.
+
+Quirks the poller deals with:
+
+- everything is an *input register* (function code 4), at most 5 consecutive
+  registers per request, so reads are grouped into short blocks
+- temperatures are signed 16-bit in 0.1 °C; values such as −32768 (no sensor)
+  are dropped instead of being logged as temperatures
+- there is **no electrical reading at all**: only the requested power in percent
+  and *thermal* energy counters in whole kWh (today/yesterday/month/year for
+  total, heating, hot water and cooling; heating + hot water = total). The
+  electrical energy and the seasonal performance factor (JAZ) that the heat
+  pump's own display shows are not exposed via Modbus, so a JAZ needs a separate
+  electricity meter for the heat pump. On our unit the monthly counter stays 0
+- circuits that aren't installed answer with zeros or not at all, hence
+  `WEISHAUPT_HEATING_CIRCUITS`
+
+Data lands in `weishaupt:<name>:latest` and `ts:weishaupt:<name>:<field>`
+(e.g. `outdoor_temp`, `dhw_temp`, `return_temp`, `power_demand_pct`,
+`operating_status`, `hc1_room_setpoint`, `energy_total_year_kwh`). The
+dashboard **Wärmepumpe: Weishaupt WGB 14** (`weishaupt-wgb14.json`) shows the
+temperatures, the operating status over time and the energy counters.
+
+### Electricity use and JAZ from manual meter readings
+
+The heat pump only reports *thermal* energy, so a seasonal performance factor
+(JAZ) needs its electricity consumption from somewhere else. Our meter (ORNO
+OR-WE-520) has only a pulse output and no data interface, so until a meter with
+one is installed the reading is taken off its display by hand.
+
+- **Form:** `https://<GRAFANA_DOMAIN>/meter/` (linked from the dashboard). Type the
+  reading, optionally the time it was taken, and save. Caddy only lets logged-in
+  Grafana users through, Google login included. It refuses a value that doesn't fit
+  between its neighbours in time (a meter only counts up), which catches most typos.
+  Locally the form is on `http://127.0.0.1:8000/`, unprotected, loopback only.
+- **Command line:** `make reading KWH=12345.6` (`AT="2026-09-21 08:00"` for an
+  earlier reading, `LOCAL=1` for the local stack) does the same over SSH.
+- **Derived values:** `weishaupt-poller` keeps a monotonic thermal counter
+  (`thermal_total_kwh`) built from the heat pump's calendar-year counter, which
+  survives the year change. From each pair of readings it derives electricity use,
+  use per day and the JAZ, both since the first reading and for the last interval
+  (`jaz_since_first`, `jaz_last_interval`, ...). Only readings taken after the
+  thermal counter started count. The heat pump counts whole kWh, so short
+  intervals are imprecise; a JAZ over weeks is much more trustworthy.
+
+Readings are stored forever (`ts:weishaupt:<name>:electric_reading_kwh`, retention 0).
+
 ## Dashboards
 
 - **SolarEdge SE10K-RWB48** (`grafana/dashboards/solaredge.json`): total PV
@@ -199,6 +258,8 @@ rate limits.
   its own AC power, the power of each PV string, and a history graph.
 - **Hoymiles: Mein Zuhause (Gesamtanlage)** (`hoymiles-mein-zuhause.json`): the
   station as a whole — combined power and today/month/year/lifetime yield.
+- **Wärmepumpe: Weishaupt WGB 14** (`weishaupt-wgb14.json`): temperatures,
+  requested power, operating status timeline and energy counters.
 - **Gesamtübersicht: Alle PV-Systeme** (`grafana/dashboards/overview.json`):
   side-by-side current power and lifetime yield for every system, plus one
   chart overlaying all of their power curves.
@@ -223,6 +284,10 @@ Grafana UI can be saved back there via "Export → Save JSON".
 | `HOYMILES_PASSWORD`        | —                  | S-Miles account password                    |
 | `HOYMILES_STATIONS`        | *(empty)*          | `id:name,...` override; empty = auto-discover all stations |
 | `HOYMILES_POLL_INTERVAL`   | `300`              | Interval between two cloud polls (seconds)  |
+| `WEISHAUPT_HOST`           | *(empty)*          | Heat pump IP; empty = no heat pump, poller idles |
+| `WEISHAUPT_POLL_INTERVAL`  | `30`               | Interval between two heat pump polls (seconds) |
+| `WEISHAUPT_HEATING_CIRCUITS` | `2`              | Installed heating circuits (1..4)           |
+| `WEISHAUPT_NAME`           | `wgb14`            | Redis key component (`weishaupt:<name>:latest`) |
 
 The poller automatically reconnects with exponential backoff if the
 inverter is briefly unreachable (e.g. at night in standby, or during
@@ -299,6 +364,7 @@ service (compose profile `proxy`) provides both:
 - `https://<GRAFANA_DOMAIN>/` → Grafana, with a Let's Encrypt certificate
 - `http://solar`, `http://solar.lan`, `http://dashboard.lan` → Grafana
 - every other request on port 80 (e.g. `http://pihole/admin`) → the Pi-hole web UI
+- `https://<GRAFANA_DOMAIN>/meter/` → the meter reading form, only for logged-in Grafana users
 
 The hostname only has to *look* right to Google (public TLD); it doesn't have
 to be reachable from the internet. Point it at the Docker host with a local DNS

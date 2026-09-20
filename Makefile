@@ -4,13 +4,13 @@
 PI_HOST      ?= 192.168.0.2
 PI_DIR       ?= ~/se10k
 DEPLOY_DIR   := deploy
-IMAGES       := redis/redis-stack-server:latest grafana/grafana:11.3.0 se10k-poller:latest se10k-grafana-init:latest se10k-hoymiles-poller:latest se10k-caddy:latest
+IMAGES       := redis/redis-stack-server:latest grafana/grafana:11.3.0 se10k-poller:latest se10k-grafana-init:latest se10k-hoymiles-poller:latest se10k-weishaupt-poller:latest se10k-meter-form:latest se10k-caddy:latest
 COMPOSE_SRC  := docker-compose.yml
 COMPOSE_DST  := $(DEPLOY_DIR)/docker-compose.yml
 
 .PHONY: help up down restart logs ps build \
         deploy deploy-poller deploy-config deploy-images deploy-start \
-        prepare-deploy clean-deploy
+        reading prepare-deploy clean-deploy
 
 help:
 	@echo "Local development:"
@@ -26,6 +26,9 @@ help:
 	@echo "  make deploy-config  - Only sync docker-compose.yml/.env/grafana/ (no restart)"
 	@echo "  make deploy-start   - (Re)start the stack on the Pi"
 	@echo "  make clean-deploy   - Remove local deploy artifacts (tarballs)"
+	@echo ""
+	@echo "Heat pump electricity meter (manual reading):"
+	@echo "  make reading KWH=12345.6 [AT=\"2026-09-21 08:00\"] [LOCAL=1]"
 
 # --- Local development ---
 
@@ -45,7 +48,7 @@ ps:
 	docker compose ps
 
 build:
-	docker compose --profile proxy build poller grafana-init hoymiles-poller caddy
+	docker compose --profile proxy build poller grafana-init hoymiles-poller weishaupt-poller meter-form caddy
 
 # --- Deployment to the Pi ---
 #
@@ -58,20 +61,24 @@ prepare-deploy: build
 	sed -e 's|build: ./poller|image: se10k-poller:latest|' \
 	    -e 's|build: ./grafana-init|image: se10k-grafana-init:latest|' \
 	    -e 's|build: ./hoymiles-poller|image: se10k-hoymiles-poller:latest|' \
+	    -e 's|build: ./weishaupt-poller|image: se10k-weishaupt-poller:latest|' \
+	    -e 's|build: ./meter-form|image: se10k-meter-form:latest|' \
 	    -e 's|build: ./caddy|image: se10k-caddy:latest|' \
 	    $(COMPOSE_SRC) > $(COMPOSE_DST)
 	cp .env $(DEPLOY_DIR)/.env
 	rm -rf $(DEPLOY_DIR)/grafana
 	cp -R grafana $(DEPLOY_DIR)/grafana
 
+# The grafana/ and caddy/ directories on the Pi are bind-mounted into running containers, so
+# they must be updated *in place*: deleting and re-creating a directory leaves the containers
+# pointing at the deleted one ("no such file or directory") until they are re-created.
+# Files are only overwritten, never removed: a dashboard deleted from the repo stays on the Pi
+# until you delete it there (and emptying the directory could make Grafana drop dashboards).
 deploy-config: prepare-deploy
-	ssh $(PI_HOST) "mkdir -p $(PI_DIR)"
+	ssh $(PI_HOST) "mkdir -p $(PI_DIR)/grafana $(PI_DIR)/caddy"
 	scp -q $(COMPOSE_DST) $(DEPLOY_DIR)/.env $(PI_HOST):$(PI_DIR)/
-	ssh $(PI_HOST) "rm -rf $(PI_DIR)/grafana"
-	scp -q -r $(DEPLOY_DIR)/grafana $(PI_HOST):$(PI_DIR)/
-	ssh $(PI_HOST) "rm -rf $(PI_DIR)/caddy"
-	mkdir -p $(DEPLOY_DIR)/caddy && cp caddy/Caddyfile $(DEPLOY_DIR)/caddy/Caddyfile
-	scp -q -r $(DEPLOY_DIR)/caddy $(PI_HOST):$(PI_DIR)/
+	tar -C $(DEPLOY_DIR)/grafana -cf - . | ssh $(PI_HOST) "cd $(PI_DIR)/grafana && tar -xf -"
+	scp -q caddy/Caddyfile $(PI_HOST):$(PI_DIR)/caddy/Caddyfile
 
 deploy-images: prepare-deploy
 	docker save $(IMAGES) | gzip -1 > $(DEPLOY_DIR)/images.tar.gz
@@ -81,6 +88,7 @@ deploy-images: prepare-deploy
 
 deploy-start:
 	ssh $(PI_HOST) "cd $(PI_DIR) && docker compose --profile proxy up -d"
+	ssh $(PI_HOST) "cd $(PI_DIR) && docker compose --profile proxy exec -T caddy caddy reload --config /etc/caddy/Caddyfile --force"
 	ssh $(PI_HOST) "cd $(PI_DIR) && docker compose --profile proxy ps"
 
 deploy: deploy-images deploy-config deploy-start
@@ -99,3 +107,8 @@ deploy-poller: prepare-deploy
 
 clean-deploy:
 	rm -f $(DEPLOY_DIR)/*.tar.gz
+
+# Record a manual electricity meter reading for the heat pump (writes to the Pi, or local with LOCAL=1).
+reading:
+	@test -n "$(KWH)" || { echo 'Usage: make reading KWH=12345.6 [AT="2026-09-21 08:00"] [LOCAL=1]'; exit 2; }
+	@PI_HOST="$(PI_HOST)" PI_DIR="$(PI_DIR)" scripts/meter-reading.sh "$(KWH)" "$(AT)"

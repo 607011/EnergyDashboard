@@ -1,0 +1,1744 @@
+{
+  "uid": "weishaupt-wgb14",
+  "title": "Wärmepumpe: Weishaupt WGB 14",
+  "description": "Sole/Wasser-Wärmepumpe Weishaupt Geoblock WGB 14, gelesen per Modbus TCP.",
+  "tags": [
+    "weishaupt",
+    "waermepumpe"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 2,
+  "refresh": "1m",
+  "graphTooltip": 2,
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Außentemperatur",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "unit": "celsius",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "weishaupt:wgb14:latest",
+          "field": "outdoor_temp"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Betriebsstatus",
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 4,
+        "y": 0
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Undefiniert",
+                  "index": 0
+                },
+                "1": {
+                  "text": "Relaistest",
+                  "index": 1
+                },
+                "2": {
+                  "text": "Notaus",
+                  "index": 2,
+                  "color": "red"
+                },
+                "3": {
+                  "text": "Diagnose",
+                  "index": 3
+                },
+                "4": {
+                  "text": "Handbetrieb",
+                  "index": 4
+                },
+                "5": {
+                  "text": "Handbetrieb Heizen",
+                  "index": 5
+                },
+                "6": {
+                  "text": "Handbetrieb Kühlen",
+                  "index": 6
+                },
+                "7": {
+                  "text": "Manuelles Abtauen",
+                  "index": 7
+                },
+                "8": {
+                  "text": "Abtauen",
+                  "index": 8,
+                  "color": "light-blue"
+                },
+                "9": {
+                  "text": "2. Wärmeerzeuger",
+                  "index": 9
+                },
+                "10": {
+                  "text": "EVU-Sperre",
+                  "index": 10,
+                  "color": "yellow"
+                },
+                "11": {
+                  "text": "SG-Tarif",
+                  "index": 11
+                },
+                "12": {
+                  "text": "SG-Maximal",
+                  "index": 12
+                },
+                "13": {
+                  "text": "Tarifladung",
+                  "index": 13
+                },
+                "14": {
+                  "text": "Erhöhter Betrieb",
+                  "index": 14
+                },
+                "15": {
+                  "text": "Standzeit",
+                  "index": 15,
+                  "color": "text"
+                },
+                "16": {
+                  "text": "Standby",
+                  "index": 16,
+                  "color": "text"
+                },
+                "17": {
+                  "text": "Spülbetrieb",
+                  "index": 17
+                },
+                "18": {
+                  "text": "Frostschutz",
+                  "index": 18
+                },
+                "19": {
+                  "text": "Heizbetrieb",
+                  "index": 19,
+                  "color": "orange"
+                },
+                "20": {
+                  "text": "Warmwasserbetrieb",
+                  "index": 20,
+                  "color": "blue"
+                },
+                "21": {
+                  "text": "Legionellenschutz",
+                  "index": 21,
+                  "color": "purple"
+                },
+                "22": {
+                  "text": "Umschaltung Heizen/Kühlen",
+                  "index": 22
+                },
+                "23": {
+                  "text": "Kühlbetrieb",
+                  "index": 23,
+                  "color": "light-blue"
+                },
+                "24": {
+                  "text": "Passive Kühlung",
+                  "index": 24
+                },
+                "25": {
+                  "text": "Sommerbetrieb",
+                  "index": 25,
+                  "color": "green"
+                },
+                "26": {
+                  "text": "Schwimmbad",
+                  "index": 26
+                },
+                "27": {
+                  "text": "Urlaub",
+                  "index": 27
+                },
+                "28": {
+                  "text": "Estrichtrocknung",
+                  "index": 28
+                },
+                "29": {
+                  "text": "Gesperrt",
+                  "index": 29,
+                  "color": "red"
+                },
+                "30": {
+                  "text": "Sperre Außentemp.",
+                  "index": 30
+                },
+                "31": {
+                  "text": "Sperre Sommer",
+                  "index": 31
+                },
+                "32": {
+                  "text": "Sperre Winter",
+                  "index": 32
+                },
+                "33": {
+                  "text": "Einsatzgrenze",
+                  "index": 33,
+                  "color": "yellow"
+                },
+                "34": {
+                  "text": "HK-Sperre",
+                  "index": 34
+                },
+                "35": {
+                  "text": "Bereitschaft",
+                  "index": 35
+                },
+                "36": {
+                  "text": "Regenerativ",
+                  "index": 36
+                },
+                "37": {
+                  "text": "SGR3 Heizen",
+                  "index": 37
+                },
+                "38": {
+                  "text": "SGR3 Kühlen",
+                  "index": 38
+                },
+                "39": {
+                  "text": "SGR3 Warmwasser",
+                  "index": 39
+                },
+                "40": {
+                  "text": "SGR4 Heizen",
+                  "index": 40
+                },
+                "41": {
+                  "text": "SGR4 Kühlen",
+                  "index": 41
+                },
+                "42": {
+                  "text": "SGR4 Warmwasser",
+                  "index": 42
+                },
+                "43": {
+                  "text": "Ölrückführung",
+                  "index": 43
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/"
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "weishaupt:wgb14:latest",
+          "field": "operating_status"
+        }
+      ],
+      "description": "Aktueller Betriebszustand laut Weishaupt-Datenpunktliste (Register 30006)."
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Warmwasser",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 9,
+        "y": 0
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "unit": "celsius",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "weishaupt:wgb14:latest",
+          "field": "dhw_temp"
+        }
+      ],
+      "description": "Ist-Temperatur des Warmwasserspeichers."
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Rücklauf",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 13,
+        "y": 0
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "unit": "celsius",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "weishaupt:wgb14:latest",
+          "field": "return_temp"
+        }
+      ],
+      "description": "Rücklauftemperatur der Wärmepumpe. Der Vorlauffühler ist bei dieser Anlage nicht verbaut bzw. meldet keinen Wert."
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Leistungsanforderung",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 17,
+        "y": 0
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          },
+          "unit": "percent",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "weishaupt:wgb14:latest",
+          "field": "power_demand_pct"
+        }
+      ],
+      "description": "Angeforderte Leistung der Wärmepumpe (0–100 %). Die Wärmepumpe meldet keine elektrische Leistung in Watt."
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Störungen",
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 21,
+        "y": 0
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "OK",
+                  "color": "green",
+                  "index": 0
+                },
+                "0": {
+                  "text": "Störung",
+                  "color": "red",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/"
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "weishaupt:wgb14:latest",
+          "field": "fault_free"
+        }
+      ],
+      "description": "Störungsfreier Betrieb (Register 33102)."
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Temperaturen",
+      "gridPos": {
+        "h": 9,
+        "w": 16,
+        "x": 0,
+        "y": 4
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:weishaupt:wgb14:outdoor_temp",
+          "legend": "Außen"
+        },
+        {
+          "refId": "B",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:weishaupt:wgb14:dhw_temp",
+          "legend": "Warmwasser"
+        },
+        {
+          "refId": "C",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:weishaupt:wgb14:dhw_setpoint",
+          "legend": "Warmwasser Soll"
+        },
+        {
+          "refId": "D",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:weishaupt:wgb14:return_temp",
+          "legend": "Rücklauf"
+        },
+        {
+          "refId": "E",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:weishaupt:wgb14:hc2_flow_temp",
+          "legend": "Heizkreis 2 Vorlauf"
+        },
+        {
+          "refId": "F",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:weishaupt:wgb14:flow_temp",
+          "legend": "Vorlauf Wärmepumpe"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Leistungsanforderung",
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 16,
+        "y": 4
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 20
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:weishaupt:wgb14:power_demand_pct",
+          "legend": "Leistungsanforderung"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "state-timeline",
+      "title": "Betriebsstatus (Verlauf)",
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 13
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Undefiniert",
+                  "index": 0
+                },
+                "1": {
+                  "text": "Relaistest",
+                  "index": 1
+                },
+                "2": {
+                  "text": "Notaus",
+                  "index": 2,
+                  "color": "red"
+                },
+                "3": {
+                  "text": "Diagnose",
+                  "index": 3
+                },
+                "4": {
+                  "text": "Handbetrieb",
+                  "index": 4
+                },
+                "5": {
+                  "text": "Handbetrieb Heizen",
+                  "index": 5
+                },
+                "6": {
+                  "text": "Handbetrieb Kühlen",
+                  "index": 6
+                },
+                "7": {
+                  "text": "Manuelles Abtauen",
+                  "index": 7
+                },
+                "8": {
+                  "text": "Abtauen",
+                  "index": 8,
+                  "color": "light-blue"
+                },
+                "9": {
+                  "text": "2. Wärmeerzeuger",
+                  "index": 9
+                },
+                "10": {
+                  "text": "EVU-Sperre",
+                  "index": 10,
+                  "color": "yellow"
+                },
+                "11": {
+                  "text": "SG-Tarif",
+                  "index": 11
+                },
+                "12": {
+                  "text": "SG-Maximal",
+                  "index": 12
+                },
+                "13": {
+                  "text": "Tarifladung",
+                  "index": 13
+                },
+                "14": {
+                  "text": "Erhöhter Betrieb",
+                  "index": 14
+                },
+                "15": {
+                  "text": "Standzeit",
+                  "index": 15,
+                  "color": "text"
+                },
+                "16": {
+                  "text": "Standby",
+                  "index": 16,
+                  "color": "text"
+                },
+                "17": {
+                  "text": "Spülbetrieb",
+                  "index": 17
+                },
+                "18": {
+                  "text": "Frostschutz",
+                  "index": 18
+                },
+                "19": {
+                  "text": "Heizbetrieb",
+                  "index": 19,
+                  "color": "orange"
+                },
+                "20": {
+                  "text": "Warmwasserbetrieb",
+                  "index": 20,
+                  "color": "blue"
+                },
+                "21": {
+                  "text": "Legionellenschutz",
+                  "index": 21,
+                  "color": "purple"
+                },
+                "22": {
+                  "text": "Umschaltung Heizen/Kühlen",
+                  "index": 22
+                },
+                "23": {
+                  "text": "Kühlbetrieb",
+                  "index": 23,
+                  "color": "light-blue"
+                },
+                "24": {
+                  "text": "Passive Kühlung",
+                  "index": 24
+                },
+                "25": {
+                  "text": "Sommerbetrieb",
+                  "index": 25,
+                  "color": "green"
+                },
+                "26": {
+                  "text": "Schwimmbad",
+                  "index": 26
+                },
+                "27": {
+                  "text": "Urlaub",
+                  "index": 27
+                },
+                "28": {
+                  "text": "Estrichtrocknung",
+                  "index": 28
+                },
+                "29": {
+                  "text": "Gesperrt",
+                  "index": 29,
+                  "color": "red"
+                },
+                "30": {
+                  "text": "Sperre Außentemp.",
+                  "index": 30
+                },
+                "31": {
+                  "text": "Sperre Sommer",
+                  "index": 31
+                },
+                "32": {
+                  "text": "Sperre Winter",
+                  "index": 32
+                },
+                "33": {
+                  "text": "Einsatzgrenze",
+                  "index": 33,
+                  "color": "yellow"
+                },
+                "34": {
+                  "text": "HK-Sperre",
+                  "index": 34
+                },
+                "35": {
+                  "text": "Bereitschaft",
+                  "index": 35
+                },
+                "36": {
+                  "text": "Regenerativ",
+                  "index": 36
+                },
+                "37": {
+                  "text": "SGR3 Heizen",
+                  "index": 37
+                },
+                "38": {
+                  "text": "SGR3 Kühlen",
+                  "index": 38
+                },
+                "39": {
+                  "text": "SGR3 Warmwasser",
+                  "index": 39
+                },
+                "40": {
+                  "text": "SGR4 Heizen",
+                  "index": 40
+                },
+                "41": {
+                  "text": "SGR4 Kühlen",
+                  "index": 41
+                },
+                "42": {
+                  "text": "SGR4 Warmwasser",
+                  "index": 42
+                },
+                "43": {
+                  "text": "Ölrückführung",
+                  "index": 43
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "custom": {
+            "fillOpacity": 75
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "mergeValues": true,
+        "showValue": "auto",
+        "alignValue": "left",
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:weishaupt:wgb14:operating_status",
+          "legend": "Status"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "row",
+      "title": "Thermische Energieabgabe der Wärmepumpe (kWh)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 19
+      },
+      "panels": []
+    },
+    {
+      "id": 11,
+      "type": "stat",
+      "title": "Wärme gesamt heute",
+      "gridPos": {
+        "h": 3,
+        "w": 6,
+        "x": 0,
+        "y": 20
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "unit": "kwatth",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "weishaupt:wgb14:latest",
+          "field": "energy_total_today_kwh"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "stat",
+      "title": "Heizen heute",
+      "gridPos": {
+        "h": 3,
+        "w": 6,
+        "x": 6,
+        "y": 20
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          },
+          "unit": "kwatth",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "weishaupt:wgb14:latest",
+          "field": "energy_heating_today_kwh"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "stat",
+      "title": "Warmwasser heute",
+      "gridPos": {
+        "h": 3,
+        "w": 6,
+        "x": 12,
+        "y": 20
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "unit": "kwatth",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "weishaupt:wgb14:latest",
+          "field": "energy_dhw_today_kwh"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "stat",
+      "title": "Kühlen heute",
+      "gridPos": {
+        "h": 3,
+        "w": 6,
+        "x": 18,
+        "y": 20
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "light-blue"
+          },
+          "unit": "kwatth",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "weishaupt:wgb14:latest",
+          "field": "energy_cooling_today_kwh"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "stat",
+      "title": "Wärme gesamt gestern",
+      "gridPos": {
+        "h": 3,
+        "w": 6,
+        "x": 0,
+        "y": 23
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "unit": "kwatth",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "weishaupt:wgb14:latest",
+          "field": "energy_total_yesterday_kwh"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "type": "stat",
+      "title": "Heizen gestern",
+      "gridPos": {
+        "h": 3,
+        "w": 6,
+        "x": 6,
+        "y": 23
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          },
+          "unit": "kwatth",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "weishaupt:wgb14:latest",
+          "field": "energy_heating_yesterday_kwh"
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "type": "stat",
+      "title": "Warmwasser gestern",
+      "gridPos": {
+        "h": 3,
+        "w": 6,
+        "x": 12,
+        "y": 23
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "unit": "kwatth",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "weishaupt:wgb14:latest",
+          "field": "energy_dhw_yesterday_kwh"
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "type": "stat",
+      "title": "Kühlen gestern",
+      "gridPos": {
+        "h": 3,
+        "w": 6,
+        "x": 18,
+        "y": 23
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "light-blue"
+          },
+          "unit": "kwatth",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "weishaupt:wgb14:latest",
+          "field": "energy_cooling_yesterday_kwh"
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "type": "stat",
+      "title": "Wärme gesamt jahr",
+      "gridPos": {
+        "h": 3,
+        "w": 6,
+        "x": 0,
+        "y": 26
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "unit": "kwatth",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "weishaupt:wgb14:latest",
+          "field": "energy_total_year_kwh"
+        }
+      ],
+      "description": "Thermische Energieabgabe laut Weishaupt-Statistik (Register 36xxx, ganze kWh); Heizen + Warmwasser = Gesamt. Die elektrische Aufnahme bietet die Modbus-Schnittstelle nicht, deshalb lässt sich hieraus keine Jahresarbeitszahl bilden. Der Monatszähler (36x03) liefert an dieser Anlage 0."
+    },
+    {
+      "id": 20,
+      "type": "stat",
+      "title": "Heizen jahr",
+      "gridPos": {
+        "h": 3,
+        "w": 6,
+        "x": 6,
+        "y": 26
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          },
+          "unit": "kwatth",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "weishaupt:wgb14:latest",
+          "field": "energy_heating_year_kwh"
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "type": "stat",
+      "title": "Warmwasser jahr",
+      "gridPos": {
+        "h": 3,
+        "w": 6,
+        "x": 12,
+        "y": 26
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "unit": "kwatth",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "weishaupt:wgb14:latest",
+          "field": "energy_dhw_year_kwh"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "type": "stat",
+      "title": "Kühlen jahr",
+      "gridPos": {
+        "h": 3,
+        "w": 6,
+        "x": 18,
+        "y": 26
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "light-blue"
+          },
+          "unit": "kwatth",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "weishaupt:wgb14:latest",
+          "field": "energy_cooling_year_kwh"
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "type": "row",
+      "title": "Stromverbrauch & Jahresarbeitszahl (manuelle Ablesung)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 29
+      },
+      "panels": []
+    },
+    {
+      "id": 24,
+      "type": "text",
+      "title": "Zählerstand eintragen",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 30
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "### [Zählerstand eintragen ➜](/meter/)\n\nStromzähler der Wärmepumpe ablesen und hier speichern. Die Jahresarbeitszahl entsteht aus mindestens zwei Ablesungen."
+      }
+    },
+    {
+      "id": 25,
+      "type": "stat",
+      "title": "Letzter Zählerstand",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 6,
+        "y": 30
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "kwatth",
+          "decimals": 1,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "weishaupt:wgb14:latest",
+          "field": "electric_reading_kwh"
+        }
+      ],
+      "description": "Letzte von Hand eingetragene Ablesung des Stromzählers."
+    },
+    {
+      "id": 26,
+      "type": "stat",
+      "title": "JAZ seit Beginn",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 10,
+        "y": 30
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 2,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "weishaupt:wgb14:latest",
+          "field": "jaz_since_first"
+        }
+      ],
+      "description": "Thermische Energieabgabe geteilt durch aufgenommenen Strom, seit der ersten Ablesung. Der Wärmezähler wird ab dem Start des Pollers mitgeführt; Ablesungen davor zählen nicht."
+    },
+    {
+      "id": 27,
+      "type": "stat",
+      "title": "JAZ letzter Zeitraum",
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 14,
+        "y": 30
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 2,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "weishaupt:wgb14:latest",
+          "field": "jaz_last_interval"
+        }
+      ],
+      "description": "Zwischen den letzten beiden Ablesungen. Die Wärmepumpe zählt Wärme nur in ganzen kWh, kurze Zeiträume sind deshalb ungenau."
+    },
+    {
+      "id": 28,
+      "type": "stat",
+      "title": "Strom pro Tag",
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 19,
+        "y": 30
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "kwatth",
+          "decimals": 1,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "weishaupt:wgb14:latest",
+          "field": "electric_kwh_per_day_last"
+        }
+      ],
+      "description": "Mittlerer Stromverbrauch im letzten Ablesezeitraum."
+    },
+    {
+      "id": 29,
+      "type": "timeseries",
+      "title": "Zählerstände und JAZ",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 34
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "points",
+            "pointSize": 8,
+            "showPoints": "always",
+            "lineWidth": 2,
+            "spanNulls": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Zählerstand"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "kwatth"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "left"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "JAZ.*"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.drawStyle",
+                "value": "line"
+              },
+              {
+                "id": "custom.showPoints",
+                "value": "always"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:weishaupt:wgb14:electric_reading_kwh",
+          "legend": "Zählerstand"
+        },
+        {
+          "refId": "B",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:weishaupt:wgb14:jaz_since_first",
+          "legend": "JAZ seit Beginn"
+        },
+        {
+          "refId": "C",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:weishaupt:wgb14:jaz_last_interval",
+          "legend": "JAZ letzter Zeitraum"
+        }
+      ]
+    }
+  ]
+}

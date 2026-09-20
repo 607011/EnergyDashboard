@@ -16,6 +16,20 @@
 		# has a local record for this hostname, which confuses the zone lookup.
 		resolvers 1.1.1.1 8.8.8.8
 	}
+	# Meter reading form: only for users logged in to Grafana (a session cookie is valid on this
+	# origin). Grafana's /api/user answers 200 for them; everyone else is sent to the login page.
+	redir /meter /meter/
+	handle /meter/* {
+		forward_auth grafana:3000 {
+			uri /api/user
+			@unauth status 401
+			handle_response @unauth {
+				redir * /login?redirect_to=%2Fmeter%2F 302
+			}
+		}
+		uri strip_prefix /meter
+		reverse_proxy meter-form:8000
+	}
 	reverse_proxy grafana:3000
 }
 

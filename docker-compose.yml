@@ -43,6 +43,42 @@ services:
       REDIS_PORT: 6379
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
+  weishaupt-poller:
+    build: ./weishaupt-poller
+    restart: unless-stopped
+    depends_on:
+      - redis
+    environment:
+      # Leave WEISHAUPT_HOST empty if you have no Weishaupt heat pump: the poller then just idles.
+      WEISHAUPT_HOST: ${WEISHAUPT_HOST:-}
+      WEISHAUPT_PORT: ${WEISHAUPT_PORT:-502}
+      WEISHAUPT_UNIT: ${WEISHAUPT_UNIT:-1}
+      WEISHAUPT_NAME: ${WEISHAUPT_NAME:-wgb14}
+      WEISHAUPT_HEATING_CIRCUITS: ${WEISHAUPT_HEATING_CIRCUITS:-2}
+      WEISHAUPT_POLL_INTERVAL: ${WEISHAUPT_POLL_INTERVAL:-30}
+      TIMEZONE: ${TIMEZONE:-UTC}
+      MODBUS_TIMEOUT: ${MODBUS_TIMEOUT:-5}
+      TS_RETENTION_DAYS: ${TS_RETENTION_DAYS:-365}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+  # Web form for entering the heat pump's electricity meter reading by hand. No login of its
+  # own: Caddy only lets logged-in Grafana users reach it (https://<GRAFANA_DOMAIN>/meter/).
+  meter-form:
+    build: ./meter-form
+    restart: unless-stopped
+    depends_on:
+      - redis
+    ports:
+      - "127.0.0.1:8000:8000"  # loopback only, for local testing / an SSH tunnel
+    environment:
+      WEISHAUPT_NAME: ${WEISHAUPT_NAME:-wgb14}
+      TIMEZONE: ${TIMEZONE:-UTC}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
   grafana:
     image: grafana/grafana:11.3.0
     restart: unless-stopped
