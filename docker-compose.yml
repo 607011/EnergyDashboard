@@ -69,9 +69,6 @@ services:
       GF_AUTH_GOOGLE_ALLOW_SIGN_UP: ${GOOGLE_ALLOW_SIGN_UP:-false}
       GF_AUTH_GOOGLE_ALLOWED_DOMAINS: ${GOOGLE_ALLOWED_DOMAINS:-}
       GF_AUTH_GOOGLE_AUTO_LOGIN: "false"
-      # Match existing users by the (Google-verified) email; without this, Grafana 11
-      # rejects the first login with "Sign up is disabled" although the user exists.
-      GF_AUTH_OAUTH_ALLOW_INSECURE_EMAIL_LOOKUP: "true"
     volumes:
       - grafana-data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning

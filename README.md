@@ -274,6 +274,14 @@ matched by email, can log in with Google; nobody else gets an account
 automatically. `GOOGLE_ALLOWED_DOMAINS` can additionally restrict to Google
 Workspace domains — never set it to `gmail.com`, that would admit every Gmail user.
 
+**First login of a new user:** Grafana links a Google account to a Grafana user
+by Google's stable user ID, and users created by `grafana-init` have no such link
+yet. A user's very first Google login is therefore refused with "Sign up is
+disabled" unless you temporarily set `GF_AUTH_OAUTH_ALLOW_INSECURE_EMAIL_LOOKUP: "true"`
+on the `grafana` service (it makes Grafana fall back to the email once). That's
+safe here because Google verifies emails and sign-up stays off; remove it again
+after the new user has logged in once.
+
 **Redirect URI restriction:** Google only accepts `https://` redirect URIs on a
 real public domain, or `http://localhost`. A LAN address like
 `http://192.168.0.2:3000` or `http://solar.lan` is rejected. So this works out of
