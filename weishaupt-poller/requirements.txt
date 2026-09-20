@@ -1,3 +1,2 @@
 pymodbus==3.6.9
 redis==5.0.8
-tzdata==2025.2

@@ -28,7 +28,7 @@ help:
 	@echo "  make clean-deploy   - Remove local deploy artifacts (tarballs)"
 	@echo ""
 	@echo "Heat pump electricity meter (manual reading):"
-	@echo "  make reading KWH=12345.6 [AT=\"2026-09-21 08:00\"] [LOCAL=1]"
+	@echo "  make reading KWH=12345.6 [THERMAL=8324] [AT=\"2026-09-21 08:00\"] [LOCAL=1]"
 
 # --- Local development ---
 
@@ -110,5 +110,5 @@ clean-deploy:
 
 # Record a manual electricity meter reading for the heat pump (writes to the Pi, or local with LOCAL=1).
 reading:
-	@test -n "$(KWH)" || { echo 'Usage: make reading KWH=12345.6 [AT="2026-09-21 08:00"] [LOCAL=1]'; exit 2; }
-	@PI_HOST="$(PI_HOST)" PI_DIR="$(PI_DIR)" scripts/meter-reading.sh "$(KWH)" "$(AT)"
+	@test -n "$(KWH)" || { echo 'Usage: make reading KWH=12345.6 [THERMAL=8324] [AT="2026-09-21 08:00"] [LOCAL=1]'; exit 2; }
+	@PI_HOST="$(PI_HOST)" PI_DIR="$(PI_DIR)" scripts/meter-reading.sh "$(KWH)" "$(AT)" "$(THERMAL)"

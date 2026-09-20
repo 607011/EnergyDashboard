@@ -18,8 +18,6 @@ import logging
 import os
 import signal
 import time
-from datetime import datetime
-from zoneinfo import ZoneInfo
 
 import redis
 from pymodbus.client import ModbusTcpClient
@@ -48,21 +46,18 @@ REDIS_PASSWORD = os.environ.get("REDIS_PASSWORD") or None
 
 TS_RETENTION_MS = int(os.environ.get("TS_RETENTION_DAYS", "365")) * 24 * 60 * 60 * 1000
 
-TIMEZONE = ZoneInfo(os.environ.get("TIMEZONE", "UTC"))
-
-# Manual electricity meter readings ("sneaker protocol", see README) and the derived counters.
+# Manual readings ("sneaker protocol", see README): the electricity meter, and the heat pump's
+# own thermal energy counter for the calendar year, both read off at the same time.
 READING_KEY = f"ts:weishaupt:{DEVICE_KEY}:electric_reading_kwh"
-THERMAL_KEY = f"ts:weishaupt:{DEVICE_KEY}:thermal_total_kwh"
-ACCUMULATOR_KEY = f"internal:weishaupt:{DEVICE_KEY}"
+THERMAL_READING_KEY = f"ts:weishaupt:{DEVICE_KEY}:thermal_reading_kwh"
 # Derived from sparse readings: keep forever instead of the usual retention window.
 LONG_TERM_FIELDS = {
-    "thermal_total_kwh",
     "jaz_since_first", "jaz_last_interval",
     "electric_kwh_since_first", "electric_kwh_last_interval", "electric_kwh_per_day_last",
     "thermal_kwh_since_first", "thermal_kwh_last_interval",
 }
 # Fields that only exist in the "latest" hash, not as time series of their own.
-HASH_ONLY_FIELDS = {"electric_reading_kwh", "electric_reading_at"}
+HASH_ONLY_FIELDS = {"electric_reading_kwh", "electric_reading_at", "thermal_reading_kwh"}
 
 MAX_BACKOFF = 60
 MAX_BLOCK = 5  # protocol limit of the heat pump
@@ -151,7 +146,8 @@ for _hc in range(1, HEATING_CIRCUITS + 1):
         (f"hc{_hc}_flow_temp", _base + 4, temp),
     ]
 
-# energy statistics, whole kWh: <group> x (today, yesterday, month, year)
+# energy statistics, whole kWh: <group> x (today, yesterday, month, year). On our unit these did
+# not match the display's thermal energy, so they are logged for reference but not used anywhere.
 for _group, _base in (("total", 36101), ("heating", 36201), ("dhw", 36301), ("cooling", 36401)):
     for _i, _period in enumerate(("today", "yesterday", "month", "year")):
         REGISTERS.append((f"energy_{_group}_{_period}_kwh", _base + _i, unsigned))
@@ -195,81 +191,60 @@ def read_values(client: ModbusTcpClient) -> dict:
     return values
 
 
-def update_thermal_total(r: redis.Redis, values: dict) -> None:
-    """Keep a monotonic thermal energy counter derived from the calendar-year counter.
-
-    The heat pump's own counters reset at midnight / month / year boundaries, which is
-    useless for computing a performance factor over several days or across New Year.
-    A decrease is only accepted as a rollover in January; anywhere else it's treated as
-    a bad reading and skipped, as is an implausible jump.
-    """
-    year = values.get("energy_total_year_kwh")
-    if year is None:
-        return
-    acc = r.hgetall(ACCUMULATOR_KEY)
-    if acc:
-        last, total = float(acc["last_year_kwh"]), float(acc["thermal_total_kwh"])
-        if year >= last:
-            delta = year - last
-        elif datetime.now(TIMEZONE).month == 1:
-            delta = year
-        else:
-            log.warning("Year energy counter fell from %s to %s outside January, ignoring", last, year)
-            values["thermal_total_kwh"] = total
-            return
-        if delta > 500:
-            log.warning("Year energy counter jumped by %s kWh, ignoring", delta)
-            values["thermal_total_kwh"] = total
-            return
-        total += delta
-    else:
-        total = 0.0
-    r.hset(ACCUMULATOR_KEY, mapping={"last_year_kwh": year, "thermal_total_kwh": total})
-    values["thermal_total_kwh"] = total
-
-
-def value_at(r: redis.Redis, key: str, ts_ms: int):
-    res = r.ts().revrange(key, 0, ts_ms, count=1)
-    return res[0][1] if res else None
-
-
 def derive_efficiency(r: redis.Redis) -> tuple[dict, dict]:
-    """From the manual meter readings, derive electricity use and the seasonal performance factor.
+    """From the manual readings, derive electricity use, thermal energy and the seasonal performance factor.
 
-    Returns (values, timestamps): the timestamp of a derived value is that of the newest
-    reading, so the series shows one point per reading. Only readings taken after the
-    thermal counter started can be used, since the thermal side needs a matching value.
+    Each reading has the electricity meter (kWh) and optionally the heat pump's thermal energy
+    counter for the calendar year (kWh). The year counter restarts on 1 January, so a lower value
+    than the previous one is taken as a new year and counts as that value; heat produced between
+    the last reading of the old year and midnight is lost, so take a reading around New Year.
+
+    Returns (values, timestamps): the timestamp of a derived value is that of the newest reading,
+    so the series shows one point per reading.
     """
     try:
-        readings = r.ts().range(READING_KEY, "-", "+")
+        electric = r.ts().range(READING_KEY, "-", "+")
     except redis.ResponseError:
         return {}, {}  # no reading entered yet
-    if not readings:
+    if not electric:
         return {}, {}
 
-    values = {"electric_reading_kwh": readings[-1][1], "electric_reading_at": readings[-1][0]}
-    usable = []
-    for t, electric in readings:
-        thermal = value_at(r, THERMAL_KEY, t)
-        if thermal is not None:
-            usable.append((t, electric, thermal))
-    if len(usable) < 2:
+    values = {"electric_reading_kwh": electric[-1][1], "electric_reading_at": electric[-1][0]}
+    try:
+        thermal = dict(r.ts().range(THERMAL_READING_KEY, "-", "+"))
+    except redis.ResponseError:
+        thermal = {}
+    if thermal:
+        values["thermal_reading_kwh"] = list(thermal.values())[-1]
+
+    # (time, electric kWh, cumulative thermal kWh) for readings that have both
+    points = []
+    cumulative, previous = 0.0, None
+    for t, e in electric:
+        th = thermal.get(t)
+        if th is None:
+            continue
+        if previous is not None:
+            cumulative += th - previous if th >= previous else th
+        previous = th
+        points.append((t, e, cumulative))
+    if len(points) < 2:
         return values, {}
 
     def span(a, b, suffix):
-        electric, thermal = b[1] - a[1], b[2] - a[2]
-        values[f"electric_kwh_{suffix}"] = electric
-        values[f"thermal_kwh_{suffix}"] = thermal
-        if electric > 0:
-            values[f"jaz_{suffix}"] = thermal / electric
+        electric_kwh, thermal_kwh = b[1] - a[1], b[2] - a[2]
+        values[f"electric_kwh_{suffix}"] = electric_kwh
+        values[f"thermal_kwh_{suffix}"] = thermal_kwh
+        if electric_kwh > 0:
+            values[f"jaz_{suffix}"] = thermal_kwh / electric_kwh
 
-    span(usable[0], usable[-1], "since_first")
-    span(usable[-2], usable[-1], "last_interval")
-    days = (usable[-1][0] - usable[-2][0]) / 86_400_000
+    span(points[0], points[-1], "since_first")
+    span(points[-2], points[-1], "last_interval")
+    days = (points[-1][0] - points[-2][0]) / 86_400_000
     if days > 0:
         values["electric_kwh_per_day_last"] = values["electric_kwh_last_interval"] / days
 
-    at = {field: usable[-1][0] for field in values if field not in HASH_ONLY_FIELDS}
+    at = {field: points[-1][0] for field in values if field not in HASH_ONLY_FIELDS}
     return values, at
 
 
@@ -317,7 +292,6 @@ def main() -> None:
             if not client.connect():
                 raise ConnectionError(f"cannot connect to {HOST}:{PORT}")
             values = read_values(client)
-            update_thermal_total(r, values)
             derived, derived_at = derive_efficiency(r)
             values.update(derived)
             log_device(r, values, int(time.time() * 1000), derived_at)

@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # Records a manual reading of the heat pump's electricity meter ("sneaker protocol").
 #
-#   scripts/meter-reading.sh 12345.6                      # now
-#   scripts/meter-reading.sh 12345.6 "2026-09-21 08:00"   # reading taken earlier (local time)
+#   scripts/meter-reading.sh 12345.6                          # electricity meter, now
+#   scripts/meter-reading.sh 12345.6 "2026-09-21 08:00"       # taken earlier (local time)
+#   scripts/meter-reading.sh 12345.6 "" 8324                  # plus thermal energy (year counter)
+#
+# The thermal energy is the heat pump display's counter for the calendar year; without it there
+# is no JAZ for that reading.
 #
 # Environment: PI_HOST (default 192.168.0.2), PI_DIR (default ~/se10k),
 #              LOCAL=1 to write to the local docker compose stack instead of the Pi,
@@ -11,8 +15,13 @@ set -euo pipefail
 
 kwh="${1:-}"
 at="${2:-}"
+thermal="${3:-}"
 if ! [[ "$kwh" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
-  echo "Usage: $0 <meter reading in kWh> [\"YYYY-MM-DD HH:MM\"]" >&2
+  echo "Usage: $0 <meter reading in kWh> [\"YYYY-MM-DD HH:MM\"] [thermal energy year kWh]" >&2
+  exit 2
+fi
+if [ -n "$thermal" ] && ! [[ "$thermal" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+  echo "Thermal energy must be a number of kWh" >&2
   exit 2
 fi
 
@@ -26,7 +35,7 @@ if [ -n "$at" ]; then
   fi
   ts_ms="${ts_s}000"
 else
-  ts_ms="*"
+  ts_ms="$(( $(date +%s) * 1000 ))"  # explicit, so both readings share one timestamp
 fi
 
 redis_cli() {
@@ -40,6 +49,9 @@ redis_cli() {
 
 # Typo protection: a meter only counts up.
 last=$(redis_cli TS.GET "$key" 2>/dev/null | tr '\r' '\n' | sed -n 2p || true)
+if [ -n "$thermal" ]; then
+  redis_cli TS.ADD "ts:weishaupt:${name}:thermal_reading_kwh" "$ts_ms" "$thermal" RETENTION 0 ON_DUPLICATE LAST LABELS device "$name" field thermal_reading_kwh >/dev/null
+fi
 if [[ "$last" =~ ^[0-9]+([.][0-9]+)?$ ]] && awk "BEGIN{exit !($kwh < $last)}" && [ "${FORCE:-}" != "1" ]; then
   echo "Refusing: $kwh kWh is below the previous reading ($last kWh). Typo? Use FORCE=1 to override." >&2
   exit 1

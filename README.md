@@ -214,12 +214,12 @@ Quirks the poller deals with:
   registers per request, so reads are grouped into short blocks
 - temperatures are signed 16-bit in 0.1 °C; values such as −32768 (no sensor)
   are dropped instead of being logged as temperatures
-- there is **no electrical reading at all**: only the requested power in percent
-  and *thermal* energy counters in whole kWh (today/yesterday/month/year for
-  total, heating, hot water and cooling; heating + hot water = total). The
-  electrical energy and the seasonal performance factor (JAZ) that the heat
-  pump's own display shows are not exposed via Modbus, so a JAZ needs a separate
-  electricity meter for the heat pump. On our unit the monthly counter stays 0
+- there is **no electrical reading at all**, only the requested power in
+  percent, and the energy statistics (registers 36xxx, whole kWh) **do not match
+  the thermal energy on the display**: on our unit Modbus reports 4560 kWh for the
+  year where the display shows 8324, and 0 for day and month where the display has
+  values. The poller still logs them (`energy_*_kwh`) for reference, but nothing
+  uses them, so the JAZ comes from manual readings instead (below)
 - circuits that aren't installed answer with zeros or not at all, hence
   `WEISHAUPT_HEATING_CIRCUITS`
 
@@ -227,31 +227,39 @@ Data lands in `weishaupt:<name>:latest` and `ts:weishaupt:<name>:<field>`
 (e.g. `outdoor_temp`, `dhw_temp`, `return_temp`, `power_demand_pct`,
 `operating_status`, `hc1_room_setpoint`, `energy_total_year_kwh`). The
 dashboard **Wärmepumpe: Weishaupt WGB 14** (`weishaupt-wgb14.json`) shows the
-temperatures, the operating status over time and the energy counters.
+temperatures, the operating status over time and the values from the manual
+readings (electricity, thermal energy, JAZ).
 
-### Electricity use and JAZ from manual meter readings
+### Electricity use and JAZ from manual readings
 
-The heat pump only reports *thermal* energy, so a seasonal performance factor
-(JAZ) needs its electricity consumption from somewhere else. Our meter (ORNO
-OR-WE-520) has only a pulse output and no data interface, so until a meter with
-one is installed the reading is taken off its display by hand.
+A seasonal performance factor (JAZ) is thermal energy divided by electricity
+consumption. Neither is available over Modbus in a usable form (see above), and
+our electricity meter (ORNO OR-WE-520) has only a pulse output. So both are read
+off the displays by hand ("sneaker protocol"): the **electricity meter**, and the
+heat pump's **thermal energy for the calendar year** (total, i.e. heating plus hot
+water).
 
-- **Form:** `https://<GRAFANA_DOMAIN>/meter/` (linked from the dashboard). Type the
-  reading, optionally the time it was taken, and save. Caddy only lets logged-in
-  Grafana users through, Google login included. It refuses a value that doesn't fit
-  between its neighbours in time (a meter only counts up), which catches most typos.
-  Locally the form is on `http://127.0.0.1:8000/`, unprotected, loopback only.
-- **Command line:** `make reading KWH=12345.6` (`AT="2026-09-21 08:00"` for an
-  earlier reading, `LOCAL=1` for the local stack) does the same over SSH.
-- **Derived values:** `weishaupt-poller` keeps a monotonic thermal counter
-  (`thermal_total_kwh`) built from the heat pump's calendar-year counter, which
-  survives the year change. From each pair of readings it derives electricity use,
-  use per day and the JAZ, both since the first reading and for the last interval
-  (`jaz_since_first`, `jaz_last_interval`, ...). Only readings taken after the
-  thermal counter started count. The heat pump counts whole kWh, so short
-  intervals are imprecise; a JAZ over weeks is much more trustworthy.
+- **Form:** `https://<GRAFANA_DOMAIN>/meter/` (linked from the dashboard). Enter the
+  electricity meter, the thermal year energy and, if you want, the time the reading
+  was taken (preset to now, changeable). Caddy only lets logged-in Grafana users
+  through, Google login included. Readings that don't fit between their neighbours
+  in time are refused (a meter only counts up), which catches most typos; the
+  thermal counter may drop only across New Year. Locally the form is on
+  `http://127.0.0.1:8000/`, unprotected, loopback only.
+- **Command line:** `make reading KWH=12345.6 THERMAL=8324` (`AT="2026-09-21 08:00"`
+  for an earlier reading, `LOCAL=1` for the local stack) does the same over SSH.
+- **Derived values:** `weishaupt-poller` takes every pair of consecutive readings that
+  has both values and derives electricity use, thermal energy, use per day and the
+  JAZ, both since the first such reading and for the last interval
+  (`jaz_since_first`, `jaz_last_interval`, ...). The year counter restarts on
+  1 January, so a value below the previous one counts as a new year; heat made
+  between the last reading of a year and midnight is lost, so take a reading around
+  New Year. A reading without the thermal value still counts for electricity use
+  but not for the JAZ.
 
-Readings are stored forever (`ts:weishaupt:<name>:electric_reading_kwh`, retention 0).
+The heat pump counts whole kWh, so short intervals are imprecise; a JAZ over
+weeks is far more trustworthy. Readings are stored forever
+(`ts:weishaupt:<name>:electric_reading_kwh` and `...:thermal_reading_kwh`).
 
 ## Dashboards
 
@@ -268,7 +276,8 @@ Readings are stored forever (`ts:weishaupt:<name>:electric_reading_kwh`, retenti
 - **Hoymiles: Mein Zuhause (Gesamtanlage)** (`hoymiles-mein-zuhause.json`): the
   station as a whole — combined power and today/month/year/lifetime yield.
 - **Wärmepumpe: Weishaupt WGB 14** (`weishaupt-wgb14.json`): temperatures,
-  requested power, operating status timeline and energy counters.
+  requested power, operating status timeline, and electricity, thermal energy and
+  JAZ from manual readings.
 - **Gesamtübersicht: Alle PV-Systeme** (`grafana/dashboards/overview.json`):
   side-by-side current power and lifetime yield for every system, plus one
   chart overlaying all of their power curves.

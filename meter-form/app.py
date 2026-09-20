@@ -1,9 +1,10 @@
 """Tiny web form for entering the heat pump's electricity meter reading by hand.
 
-The heat pump's meter (ORNO OR-WE-520) has only a pulse output, so until a meter with a
-proper interface is installed, someone reads it off the display now and then. This form
-writes the reading into RedisTimeSeries; weishaupt-poller derives the electricity use and
-the seasonal performance factor (JAZ) from those readings.
+The heat pump's meter (ORNO OR-WE-520) has only a pulse output, and the heat pump exposes
+no electrical or (correct) thermal energy over Modbus, so someone reads both off the displays
+now and then: the electricity meter, and the heat pump's thermal energy for the calendar year.
+This form writes the readings into RedisTimeSeries; weishaupt-poller derives the electricity
+use and the seasonal performance factor (JAZ) from them.
 
 There is no login of its own: it is meant to sit behind Caddy, which lets only logged-in
 Grafana users through (see caddy/Caddyfile). All links are relative so the form works under
@@ -29,6 +30,7 @@ DEVICE = os.environ.get("WEISHAUPT_NAME", "wgb14")
 TZ = ZoneInfo(os.environ.get("TIMEZONE", "UTC"))
 PORT = int(os.environ.get("PORT", "8000"))
 KEY = f"ts:weishaupt:{DEVICE}:electric_reading_kwh"
+THERMAL_KEY = f"ts:weishaupt:{DEVICE}:thermal_reading_kwh"
 LATEST = f"weishaupt:{DEVICE}:latest"
 
 r = redis.Redis(
@@ -58,8 +60,10 @@ PAGE = """<!doctype html>
 <h1>Stromzähler Wärmepumpe</h1>
 @@MESSAGE@@
 <form method="post" action="./reading" id="f">
- <label for="kwh">Zählerstand (kWh)</label>
+ <label for="kwh">Stromzähler (kWh)</label>
  <input id="kwh" name="kwh" type="text" inputmode="decimal" autocomplete="off" placeholder="z. B. 12345,6" required autofocus>
+ <label for="thermal">Thermische Energie Jahr, gesamt (kWh) <span class="hint">(Display der Wärmepumpe, optional – ohne sie gibt es keine JAZ)</span></label>
+ <input id="thermal" name="thermal" type="text" inputmode="decimal" autocomplete="off" placeholder="z. B. 8324">
  <label for="at">Zeitpunkt der Ablesung <span class="hint">(voreingestellt: jetzt, änderbar)</span></label>
  <input id="at" name="at" type="datetime-local" value="@@NOW@@">
  <button type="submit">Speichern</button>
@@ -90,7 +94,7 @@ def local_time(ts_ms: int) -> str:
 def summary_html() -> str:
     h = r.hgetall(LATEST)
     if "jaz_since_first" not in h and "jaz_last_interval" not in h:
-        return '<section class="hint">Die Jahresarbeitszahl erscheint ab der zweiten Ablesung, sobald der Wärmezähler der Wärmepumpe dazu Werte hat.</section>'
+        return '<section class="hint">Die Jahresarbeitszahl erscheint, sobald zwei Ablesungen sowohl den Stromzähler als auch die thermische Energie enthalten.</section>'
     return (
         '<section><div class="kpi">'
         f'<div>JAZ seit Beginn<b>{fmt(h.get("jaz_since_first"), 2)}</b></div>'
@@ -107,12 +111,19 @@ def history_html() -> str:
         rows = []
     if not rows:
         return ""
+    try:
+        thermal = dict(r.ts().revrange(THERMAL_KEY, "-", "+", count=50))
+    except redis.ResponseError:
+        thermal = {}
     body = []
     for i, (ts, value) in enumerate(rows):
         delta = fmt(value - rows[i + 1][1], 1) if i + 1 < len(rows) else "–"
-        body.append(f"<tr><td>{local_time(ts)}</td><td>{fmt(value, 1)}</td><td>{delta}</td></tr>")
+        body.append(
+            f"<tr><td>{local_time(ts)}</td><td>{fmt(value, 1)}</td><td>{delta}</td>"
+            f"<td>{fmt(thermal[ts], 0) if ts in thermal else '–'}</td></tr>"
+        )
     return (
-        "<section><table><tr><th>Ablesung</th><th>kWh</th><th>Δ kWh</th></tr>"
+        "<section><table><tr><th>Ablesung</th><th>Strom kWh</th><th>Δ</th><th>Wärme kWh</th></tr>"
         + "".join(body)
         + "</table></section>"
     )
@@ -126,11 +137,18 @@ def page(message: str = "", ok: bool = True) -> bytes:
             .replace("@@NOW@@", datetime.now(TZ).strftime("%Y-%m-%dT%H:%M"))).encode()
 
 
-def save_reading(kwh_text: str, at_text: str) -> tuple[bool, str]:
+def save_reading(kwh_text: str, at_text: str, thermal_text: str = "") -> tuple[bool, str]:
     text = kwh_text.strip().replace(",", ".").replace(" ", "").replace(" ", "")
     if not re.fullmatch(r"\d{1,9}(\.\d{1,3})?", text):
         return False, "Bitte den Zählerstand als Zahl eingeben, z. B. 12345,6."
     kwh = float(text)
+
+    thermal = None
+    thermal_clean = thermal_text.strip().replace(",", ".").replace("\u202f", "").replace(" ", "")
+    if thermal_clean:
+        if not re.fullmatch(r"\d{1,7}(\.\d{1,3})?", thermal_clean):
+            return False, "Die thermische Energie bitte als Zahl eingeben, z. B. 8324."
+        thermal = float(thermal_clean)
 
     now_ms = int(time.time() * 1000)
     if at_text:
@@ -156,11 +174,31 @@ def save_reading(kwh_text: str, at_text: str) -> tuple[bool, str]:
         return False, (f"{fmt(kwh)} kWh ist mehr als die spätere Ablesung vom {local_time(after[0][0])} "
                        f"({fmt(after[0][1])} kWh). Zahlendreher?")
 
+    if thermal is not None:
+        # The calendar-year counter only counts up within a year and restarts on 1 January.
+        year = datetime.fromtimestamp(ts / 1000, TZ).year
+        try:
+            t_before = r.ts().revrange(THERMAL_KEY, 0, ts, count=1)
+            t_after = r.ts().range(THERMAL_KEY, ts + 1, "+", count=1)
+        except redis.ResponseError:
+            t_before, t_after = [], []
+        if t_before and datetime.fromtimestamp(t_before[0][0] / 1000, TZ).year == year and thermal < t_before[0][1]:
+            return False, (f"{fmt(thermal, 0)} kWh Wärme ist weniger als am {local_time(t_before[0][0])} "
+                           f"({fmt(t_before[0][1], 0)} kWh). Zahlendreher?")
+        if t_after and datetime.fromtimestamp(t_after[0][0] / 1000, TZ).year == year and thermal > t_after[0][1]:
+            return False, (f"{fmt(thermal, 0)} kWh Wärme ist mehr als am {local_time(t_after[0][0])} "
+                           f"({fmt(t_after[0][1], 0)} kWh). Zahlendreher?")
+
     # Retention 0 = keep forever; readings are few and precious.
     r.ts().add(KEY, ts, kwh, retention_msecs=0, labels={"device": DEVICE, "field": "electric_reading_kwh"},
                duplicate_policy="last")
-    log.info("Recorded reading %s kWh at %s", kwh, local_time(ts))
-    return True, f"Gespeichert: {fmt(kwh)} kWh ({local_time(ts)})."
+    message = f"Gespeichert: {fmt(kwh)} kWh Strom"
+    if thermal is not None:
+        r.ts().add(THERMAL_KEY, ts, thermal, retention_msecs=0,
+                   labels={"device": DEVICE, "field": "thermal_reading_kwh"}, duplicate_policy="last")
+        message += f", {fmt(thermal, 0)} kWh Wärme"
+    log.info("Recorded reading %s kWh, thermal %s at %s", kwh, thermal, local_time(ts))
+    return True, f"{message} ({local_time(ts)})."
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -190,7 +228,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(404, b"not found", "text/plain")
         length = min(int(self.headers.get("Content-Length") or 0), 4096)
         form = parse_qs(self.rfile.read(length).decode())
-        ok, message = save_reading(form.get("kwh", [""])[0], form.get("at", [""])[0])
+        ok, message = save_reading(
+            form.get("kwh", [""])[0], form.get("at", [""])[0], form.get("thermal", [""])[0])
         status = 200 if ok else 422
         # Post/Redirect/Get after success so a reload doesn't submit the reading twice.
         if ok:

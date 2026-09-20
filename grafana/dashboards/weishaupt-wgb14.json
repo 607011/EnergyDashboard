@@ -8,7 +8,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 2,
+  "version": 3,
   "refresh": "1m",
   "graphTooltip": 2,
   "time": {
@@ -891,9 +891,9 @@
       ]
     },
     {
-      "id": 10,
+      "id": 23,
       "type": "row",
-      "title": "Thermische Energieabgabe der Wärmepumpe (kWh)",
+      "title": "Strom, Wärme & Jahresarbeitszahl (manuelle Ablesung)",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -904,571 +904,29 @@
       "panels": []
     },
     {
-      "id": 11,
-      "type": "stat",
-      "title": "Wärme gesamt heute",
-      "gridPos": {
-        "h": 3,
-        "w": 6,
-        "x": 0,
-        "y": 20
-      },
-      "datasource": {
-        "type": "redis-datasource",
-        "uid": "solaredge-redis"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "green"
-          },
-          "unit": "kwatth",
-          "decimals": 0
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "value",
-        "graphMode": "none"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "type": "command",
-          "command": "hget",
-          "keyName": "weishaupt:wgb14:latest",
-          "field": "energy_total_today_kwh"
-        }
-      ]
-    },
-    {
-      "id": 12,
-      "type": "stat",
-      "title": "Heizen heute",
-      "gridPos": {
-        "h": 3,
-        "w": 6,
-        "x": 6,
-        "y": 20
-      },
-      "datasource": {
-        "type": "redis-datasource",
-        "uid": "solaredge-redis"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "orange"
-          },
-          "unit": "kwatth",
-          "decimals": 0
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "value",
-        "graphMode": "none"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "type": "command",
-          "command": "hget",
-          "keyName": "weishaupt:wgb14:latest",
-          "field": "energy_heating_today_kwh"
-        }
-      ]
-    },
-    {
-      "id": 13,
-      "type": "stat",
-      "title": "Warmwasser heute",
-      "gridPos": {
-        "h": 3,
-        "w": 6,
-        "x": 12,
-        "y": 20
-      },
-      "datasource": {
-        "type": "redis-datasource",
-        "uid": "solaredge-redis"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "blue"
-          },
-          "unit": "kwatth",
-          "decimals": 0
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "value",
-        "graphMode": "none"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "type": "command",
-          "command": "hget",
-          "keyName": "weishaupt:wgb14:latest",
-          "field": "energy_dhw_today_kwh"
-        }
-      ]
-    },
-    {
-      "id": 14,
-      "type": "stat",
-      "title": "Kühlen heute",
-      "gridPos": {
-        "h": 3,
-        "w": 6,
-        "x": 18,
-        "y": 20
-      },
-      "datasource": {
-        "type": "redis-datasource",
-        "uid": "solaredge-redis"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "light-blue"
-          },
-          "unit": "kwatth",
-          "decimals": 0
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "value",
-        "graphMode": "none"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "type": "command",
-          "command": "hget",
-          "keyName": "weishaupt:wgb14:latest",
-          "field": "energy_cooling_today_kwh"
-        }
-      ]
-    },
-    {
-      "id": 15,
-      "type": "stat",
-      "title": "Wärme gesamt gestern",
-      "gridPos": {
-        "h": 3,
-        "w": 6,
-        "x": 0,
-        "y": 23
-      },
-      "datasource": {
-        "type": "redis-datasource",
-        "uid": "solaredge-redis"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "green"
-          },
-          "unit": "kwatth",
-          "decimals": 0
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "value",
-        "graphMode": "none"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "type": "command",
-          "command": "hget",
-          "keyName": "weishaupt:wgb14:latest",
-          "field": "energy_total_yesterday_kwh"
-        }
-      ]
-    },
-    {
-      "id": 16,
-      "type": "stat",
-      "title": "Heizen gestern",
-      "gridPos": {
-        "h": 3,
-        "w": 6,
-        "x": 6,
-        "y": 23
-      },
-      "datasource": {
-        "type": "redis-datasource",
-        "uid": "solaredge-redis"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "orange"
-          },
-          "unit": "kwatth",
-          "decimals": 0
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "value",
-        "graphMode": "none"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "type": "command",
-          "command": "hget",
-          "keyName": "weishaupt:wgb14:latest",
-          "field": "energy_heating_yesterday_kwh"
-        }
-      ]
-    },
-    {
-      "id": 17,
-      "type": "stat",
-      "title": "Warmwasser gestern",
-      "gridPos": {
-        "h": 3,
-        "w": 6,
-        "x": 12,
-        "y": 23
-      },
-      "datasource": {
-        "type": "redis-datasource",
-        "uid": "solaredge-redis"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "blue"
-          },
-          "unit": "kwatth",
-          "decimals": 0
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "value",
-        "graphMode": "none"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "type": "command",
-          "command": "hget",
-          "keyName": "weishaupt:wgb14:latest",
-          "field": "energy_dhw_yesterday_kwh"
-        }
-      ]
-    },
-    {
-      "id": 18,
-      "type": "stat",
-      "title": "Kühlen gestern",
-      "gridPos": {
-        "h": 3,
-        "w": 6,
-        "x": 18,
-        "y": 23
-      },
-      "datasource": {
-        "type": "redis-datasource",
-        "uid": "solaredge-redis"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "light-blue"
-          },
-          "unit": "kwatth",
-          "decimals": 0
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "value",
-        "graphMode": "none"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "type": "command",
-          "command": "hget",
-          "keyName": "weishaupt:wgb14:latest",
-          "field": "energy_cooling_yesterday_kwh"
-        }
-      ]
-    },
-    {
-      "id": 19,
-      "type": "stat",
-      "title": "Wärme gesamt jahr",
-      "gridPos": {
-        "h": 3,
-        "w": 6,
-        "x": 0,
-        "y": 26
-      },
-      "datasource": {
-        "type": "redis-datasource",
-        "uid": "solaredge-redis"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "green"
-          },
-          "unit": "kwatth",
-          "decimals": 0
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "value",
-        "graphMode": "none"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "type": "command",
-          "command": "hget",
-          "keyName": "weishaupt:wgb14:latest",
-          "field": "energy_total_year_kwh"
-        }
-      ],
-      "description": "Thermische Energieabgabe laut Weishaupt-Statistik (Register 36xxx, ganze kWh); Heizen + Warmwasser = Gesamt. Die elektrische Aufnahme bietet die Modbus-Schnittstelle nicht, deshalb lässt sich hieraus keine Jahresarbeitszahl bilden. Der Monatszähler (36x03) liefert an dieser Anlage 0."
-    },
-    {
-      "id": 20,
-      "type": "stat",
-      "title": "Heizen jahr",
-      "gridPos": {
-        "h": 3,
-        "w": 6,
-        "x": 6,
-        "y": 26
-      },
-      "datasource": {
-        "type": "redis-datasource",
-        "uid": "solaredge-redis"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "orange"
-          },
-          "unit": "kwatth",
-          "decimals": 0
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "value",
-        "graphMode": "none"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "type": "command",
-          "command": "hget",
-          "keyName": "weishaupt:wgb14:latest",
-          "field": "energy_heating_year_kwh"
-        }
-      ]
-    },
-    {
-      "id": 21,
-      "type": "stat",
-      "title": "Warmwasser jahr",
-      "gridPos": {
-        "h": 3,
-        "w": 6,
-        "x": 12,
-        "y": 26
-      },
-      "datasource": {
-        "type": "redis-datasource",
-        "uid": "solaredge-redis"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "blue"
-          },
-          "unit": "kwatth",
-          "decimals": 0
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "value",
-        "graphMode": "none"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "type": "command",
-          "command": "hget",
-          "keyName": "weishaupt:wgb14:latest",
-          "field": "energy_dhw_year_kwh"
-        }
-      ]
-    },
-    {
-      "id": 22,
-      "type": "stat",
-      "title": "Kühlen jahr",
-      "gridPos": {
-        "h": 3,
-        "w": 6,
-        "x": 18,
-        "y": 26
-      },
-      "datasource": {
-        "type": "redis-datasource",
-        "uid": "solaredge-redis"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "light-blue"
-          },
-          "unit": "kwatth",
-          "decimals": 0
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "value",
-        "graphMode": "none"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "type": "command",
-          "command": "hget",
-          "keyName": "weishaupt:wgb14:latest",
-          "field": "energy_cooling_year_kwh"
-        }
-      ]
-    },
-    {
-      "id": 23,
-      "type": "row",
-      "title": "Stromverbrauch & Jahresarbeitszahl (manuelle Ablesung)",
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 29
-      },
-      "panels": []
-    },
-    {
       "id": 24,
       "type": "text",
-      "title": "Zählerstand eintragen",
+      "title": "Ablesung eintragen",
       "gridPos": {
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 30
+        "y": 20
       },
       "options": {
         "mode": "markdown",
-        "content": "### [Zählerstand eintragen ➜](/meter/)\n\nStromzähler der Wärmepumpe ablesen und hier speichern. Die Jahresarbeitszahl entsteht aus mindestens zwei Ablesungen."
+        "content": "### [Ablesung eintragen ➜](/meter/)\n\nStromzähler und thermische Jahresenergie der Wärmepumpe (Display) ablesen und speichern. Die Jahresarbeitszahl entsteht aus mindestens zwei Ablesungen mit beiden Werten."
       }
     },
     {
       "id": 25,
       "type": "stat",
-      "title": "Letzter Zählerstand",
+      "title": "Letzter Stromzählerstand",
       "gridPos": {
         "h": 4,
         "w": 4,
         "x": 6,
-        "y": 30
+        "y": 20
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1513,7 +971,7 @@
         "h": 4,
         "w": 4,
         "x": 10,
-        "y": 30
+        "y": 20
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1548,7 +1006,7 @@
           "field": "jaz_since_first"
         }
       ],
-      "description": "Thermische Energieabgabe geteilt durch aufgenommenen Strom, seit der ersten Ablesung. Der Wärmezähler wird ab dem Start des Pollers mitgeführt; Ablesungen davor zählen nicht."
+      "description": "Thermische Energie geteilt durch Strom, seit der ersten Ablesung mit beiden Werten. Beides sind deine Ablesungen (Wärme: Jahreszähler des Displays, über den Jahreswechsel hinweg fortgeführt)."
     },
     {
       "id": 27,
@@ -1558,7 +1016,7 @@
         "h": 4,
         "w": 5,
         "x": 14,
-        "y": 30
+        "y": 20
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1593,7 +1051,7 @@
           "field": "jaz_last_interval"
         }
       ],
-      "description": "Zwischen den letzten beiden Ablesungen. Die Wärmepumpe zählt Wärme nur in ganzen kWh, kurze Zeiträume sind deshalb ungenau."
+      "description": "Zwischen den letzten beiden Ablesungen mit beiden Werten. Die Wärmepumpe zählt Wärme nur in ganzen kWh, kurze Zeiträume sind deshalb ungenau."
     },
     {
       "id": 28,
@@ -1603,7 +1061,7 @@
         "h": 4,
         "w": 5,
         "x": 19,
-        "y": 30
+        "y": 20
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1643,12 +1101,12 @@
     {
       "id": 29,
       "type": "timeseries",
-      "title": "Zählerstände und JAZ",
+      "title": "Ablesungen und JAZ",
       "gridPos": {
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 34
+        "y": 24
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1668,7 +1126,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "Zählerstand"
+              "options": "Strom (Zähler)"
             },
             "properties": [
               {
@@ -1704,6 +1162,22 @@
                 "value": "always"
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Wärme (Jahreszähler)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "kwatth"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "left"
+              }
+            ]
           }
         ]
       },
@@ -1722,7 +1196,14 @@
           "type": "timeSeries",
           "command": "ts.range",
           "keyName": "ts:weishaupt:wgb14:electric_reading_kwh",
-          "legend": "Zählerstand"
+          "legend": "Strom (Zähler)"
+        },
+        {
+          "refId": "D",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:weishaupt:wgb14:thermal_reading_kwh",
+          "legend": "Wärme (Jahreszähler)"
         },
         {
           "refId": "B",
