@@ -42,7 +42,13 @@ for entry in "${ENTRIES[@]}"; do
     echo "    created (id=$user_id)"
   else
     echo "    create returned $http_code ($(jq -r '.message // "?"' /tmp/resp.json 2>/dev/null)), assuming user exists -- syncing password"
-    user_id=$(curl -s -u "$ADMIN_USER:$ADMIN_PASSWORD" "$BASE_URL/api/users/lookup?loginOrEmail=$login" | jq -r '.id // empty')
+    # Look up by email first: after a Google login Grafana may have renamed the login to the email.
+    user_id=""
+    for key in "$email" "$login"; do
+      [ -z "$key" ] && continue
+      user_id=$(curl -s -u "$ADMIN_USER:$ADMIN_PASSWORD" "$BASE_URL/api/users/lookup?loginOrEmail=$key" | jq -r '.id // empty')
+      [ -n "$user_id" ] && break
+    done
     if [ -z "$user_id" ]; then
       echo "    could not find or create user '$login', skipping"
       continue
