@@ -14,3 +14,7 @@ __pycache__/
 
 # macOS
 .DS_Store
+
+# macOS app build output
+macos-app/.build/
+macos-app/build/

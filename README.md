@@ -448,3 +448,35 @@ The start page and name are in the manifest (`start_url`, `name`); a link with
 `?kiosk` hides Grafana's menus. Note that the installed app has its own session on iOS,
 so you log in once inside it. Whether Google's login works inside an installed app is up to
 Google (it refuses embedded webviews); the password login always works.
+
+## macOS app (PV Monitor)
+
+A small native window for a Mac with Apple Silicon (arm64 only, macOS 13+, Swift, no
+dependencies) that shows the summed production of the three PV systems (SolarEdge plus the two
+Hoymiles microinverters) and the house consumption. The house consumption figure turns **red while
+its 5-minute mean is above the production's 5-minute mean**; the big figures are the current
+values, the table shows current value and 5-minute mean per system. "Immer im Vordergrund" (also in
+the View menu, Cmd-T) keeps the window above all others, including across Spaces.
+
+- **Data:** it reads the last 15 minutes of `ts:inverter:power_pv_total`,
+  `ts:hoymiles:<model>:power_w` and `ts:inverter:house_consumption_total` through Grafana's query
+  API every 10 seconds, so all it needs is the HTTPS address and a read-only token; no Redis or Pi
+  access. It works wherever `GRAFANA_ROOT_URL` resolves (at home, or over VPN).
+- **Averages:** the mean of the samples in the last 5 minutes; a series without a sample in that
+  window (the Hoymiles cloud data arrives every 5 minutes) uses its newest sample if it is at most
+  15 minutes old, otherwise it counts as unknown. With an unknown production figure the total is
+  marked `*` and the colour rule is suspended, since a missing system would make the production
+  look too low and the consumption falsely red.
+- **Setup:**
+
+  ```bash
+  macos-app/create-token.sh      # read-only Grafana service account + token -> ~/Library/Application Support/PV Monitor/config.json
+  macos-app/build.sh --install   # builds build/PV Monitor.app and copies it to /Applications
+  ```
+
+  The config file (`{"url": ..., "token": ...}`, mode 600) can also be written by hand; the
+  environment variables `PV_URL` and `PV_TOKEN` override it. The app is signed ad hoc, which is
+  enough for the Mac it was built on; elsewhere, right-click > Open once.
+- **Testing without a GUI:** `PVMonitor --selftest` checks the averaging and the colour rule,
+  `PVMonitor --print` fetches once and prints the figures, `PVMonitor --snapshot out.png [red]`
+  renders the window with sample data to a PNG.
