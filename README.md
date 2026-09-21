@@ -423,3 +423,20 @@ Setup:
 
 The Pi-hole UI stays reachable through the proxy over plain HTTP
 (`http://pihole/admin`); its own HTTPS listener is now on port 8443.
+
+### Home-screen app (iPhone / iPad)
+
+Behind the HTTPS name the dashboards can be installed as an app: open
+`https://<GRAFANA_DOMAIN>/d/pv-overview` in Safari, then *Share → Add to Home Screen*.
+It opens in its own window without the browser bar, with a sun icon and the name
+"Energie". Grafana already declares itself standalone-capable to iOS; Caddy only
+rewrites the HTML it serves (`replace-response` plugin, built into the `caddy` image) to
+swap Grafana's icon for ours and to add a manifest (`caddy/pwa/manifest.webmanifest`,
+start page and name) and the app title. The files in `caddy/pwa/` are served without a
+login; the icons come from `scripts/make-pwa-icons.py`. There is no service worker:
+the data is live, so offline mode would show nothing useful.
+
+The start page and name are in the manifest (`start_url`, `name`); a link with
+`?kiosk` hides Grafana's menus. Note that the installed app has its own session on iOS,
+so you log in once inside it. Whether Google's login works inside an installed app is up to
+Google (it refuses embedded webviews); the password login always works.

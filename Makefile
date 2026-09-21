@@ -79,6 +79,8 @@ deploy-config: prepare-deploy
 	scp -q $(COMPOSE_DST) $(DEPLOY_DIR)/.env $(PI_HOST):$(PI_DIR)/
 	tar -C $(DEPLOY_DIR)/grafana -cf - . | ssh $(PI_HOST) "cd $(PI_DIR)/grafana && tar -xf -"
 	scp -q caddy/Caddyfile $(PI_HOST):$(PI_DIR)/caddy/Caddyfile
+	ssh $(PI_HOST) "mkdir -p $(PI_DIR)/caddy/pwa"
+	tar -C caddy/pwa -cf - . | ssh $(PI_HOST) "cd $(PI_DIR)/caddy/pwa && tar -xf -"
 
 deploy-images: prepare-deploy
 	docker save $(IMAGES) | gzip -1 > $(DEPLOY_DIR)/images.tar.gz

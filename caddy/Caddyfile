@@ -30,7 +30,28 @@
 		uri strip_prefix /meter
 		reverse_proxy meter-form:8000
 	}
-	reverse_proxy grafana:3000
+
+	# Home-screen app (iPhone/iPad, "Add to Home Screen"): icon and manifest, served without login.
+	handle /pwa/* {
+		root * /srv
+		file_server
+	}
+
+	# Grafana already asks for standalone mode; we only swap its icon for ours and add a manifest
+	# (start page, name) and a short app title, by rewriting the HTML it serves. The rewrite needs
+	# an uncompressed upstream response.
+	handle {
+		replace {
+			match {
+				header Content-Type text/html*
+			}
+			public/img/apple-touch-icon.png /pwa/apple-touch-icon.png
+			</head> `<link rel="manifest" href="/pwa/manifest.webmanifest"><meta name="apple-mobile-web-app-title" content="Energie"></head>`
+		}
+		reverse_proxy grafana:3000 {
+			header_up Accept-Encoding identity
+		}
+	}
 }
 
 # Short plain-HTTP names on the LAN.

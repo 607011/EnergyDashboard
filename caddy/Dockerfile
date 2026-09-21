@@ -1,5 +1,5 @@
 FROM caddy:2-builder AS builder
-RUN xcaddy build --with github.com/caddy-dns/acmedns
+RUN xcaddy build --with github.com/caddy-dns/acmedns --with github.com/caddyserver/replace-response
 
 FROM caddy:2
 COPY --from=builder /usr/bin/caddy /usr/bin/caddy

@@ -138,6 +138,7 @@ services:
       ACMEDNS_SERVER_URL: ${ACMEDNS_SERVER_URL:-https://auth.acme-dns.io}
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy/pwa:/srv/pwa:ro
       - caddy-data:/data
       - caddy-config:/config
 
