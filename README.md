@@ -485,3 +485,40 @@ the View menu, Cmd-T) keeps the window above all others, including across Spaces
 - **Testing without a GUI:** `PVMonitor --selftest` checks the averaging and the colour rule,
   `PVMonitor --print` fetches once and prints the figures, `PVMonitor --snapshot out.png [red]`
   renders the window with sample data to a PNG.
+
+## Compute machines on PV surplus (PrimeGrid)
+
+`compute-controller` decides when machines that run PrimeGrid should be on, so that they compute
+on solar surplus and don't draw from the battery. **Dry run only for now:** it records what it
+*would* switch (`compute:events`, dashboard **Rechner-Steuerung (Probelauf)**); nothing is switched
+until the actuation part (Shelly plugs, shutdown over SSH) exists. Configure the machines in `.env`
+as `COMPUTE_MACHINES=winola:200,gamer:250,imac:100` (`name:watts` under full load, in priority
+order: the first is started first and stopped last). The watts are estimates until the plugs
+measure them. Without `COMPUTE_MACHINES` the service idles.
+
+Every minute it works out the **headroom** (production of all three PV systems minus house
+consumption *without* the machines, 15-minute means: what would otherwise be exported or charge the
+battery) and a **forecast** for the next hour. The forecast is the measured production scaled by
+how Open-Meteo's hourly irradiance for the next hour compares with the last hour; converting
+irradiance straight to watts was too inaccurate here (the learned factor is only the fallback near
+sunrise and sunset). Then, per machine, cumulative load `L` (this machine plus the ones before it):
+
+- **on** if the headroom is at least `L` + `COMPUTE_MARGIN_ON_W`, the forecast covers `L`, and the
+  battery is at least `COMPUTE_SOC_ON` % (default 80)
+- **off** if the headroom falls below `L` − `COMPUTE_TOLERANCE_OFF_W`, or the forecast does while
+  the battery is below `COMPUTE_SOC_FC_OFF` % (battery use is to be feared), or the battery drops
+  below `COMPUTE_SOC_MIN` % (immediately)
+- a change only applies after its condition has held for `COMPUTE_ON_DELAY_MIN` /
+  `COMPUTE_OFF_DELAY_MIN` (15 / 20 minutes), and a machine keeps `COMPUTE_MIN_ON_MIN` /
+  `COMPUTE_MIN_OFF_MIN` (45 / 45) minutes of run time or pause. Without production or consumption
+  data it keeps the current state.
+
+The defaults come from `compute-controller/backtest.py`, which replays these rules over the stored
+history (`docker compose run --rm --no-deps compute-controller python backtest.py [days]`):
+without the delays the machines would have switched about 15 times a day, with them about 4-5,
+at the price of a share of the machines' energy coming from battery or grid instead of surplus
+(16 % over the first four days, without the forecast rule, which has no history to replay). The
+machines' own consumption is not in the history; while it is unknown the controller counts it as
+0 W, so if a machine actually runs, the true surplus is larger than shown.
+
+`python controller.py --selftest` (in the container) checks the rules, the forecast and the delays.

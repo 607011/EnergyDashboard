@@ -78,6 +78,36 @@ services:
       REDIS_PORT: 6379
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
+  # Decides when the compute machines (PrimeGrid) should run, from the PV surplus and a forecast.
+  # Dry run only: it records what it *would* switch, nothing is switched yet.
+  compute-controller:
+    build: ./compute-controller
+    restart: unless-stopped
+    depends_on:
+      - redis
+    environment:
+      # "name:watts,name:watts" in priority order (first is started first, stopped last).
+      # Leave empty if you have no such machines: the controller then idles.
+      COMPUTE_MACHINES: ${COMPUTE_MACHINES:-}
+      COMPUTE_MODE: ${COMPUTE_MODE:-dryrun}
+      COMPUTE_MARGIN_ON_W: ${COMPUTE_MARGIN_ON_W:-200}
+      COMPUTE_TOLERANCE_OFF_W: ${COMPUTE_TOLERANCE_OFF_W:-100}
+      COMPUTE_SMOOTH_MIN: ${COMPUTE_SMOOTH_MIN:-15}
+      COMPUTE_ON_DELAY_MIN: ${COMPUTE_ON_DELAY_MIN:-15}
+      COMPUTE_OFF_DELAY_MIN: ${COMPUTE_OFF_DELAY_MIN:-20}
+      COMPUTE_MIN_ON_MIN: ${COMPUTE_MIN_ON_MIN:-45}
+      COMPUTE_MIN_OFF_MIN: ${COMPUTE_MIN_OFF_MIN:-45}
+      COMPUTE_SOC_ON: ${COMPUTE_SOC_ON:-80}
+      COMPUTE_SOC_MIN: ${COMPUTE_SOC_MIN:-40}
+      COMPUTE_SOC_FC_OFF: ${COMPUTE_SOC_FC_OFF:-95}
+      LAT: ${LAT:-}
+      LON: ${LON:-}
+      TIMEZONE: ${TIMEZONE:-UTC}
+      TS_RETENTION_DAYS: ${TS_RETENTION_DAYS:-365}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
   grafana:
     image: grafana/grafana:11.3.0
     restart: unless-stopped

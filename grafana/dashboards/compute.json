@@ -1,0 +1,877 @@
+{
+  "uid": "compute-controller",
+  "title": "Rechner-Steuerung (Probelauf)",
+  "description": "Wann die PrimeGrid-Rechner laufen dürften: Überschuss, Prognose und Entscheidungen des Reglers (nur Probelauf, es wird nichts geschaltet).",
+  "tags": [
+    "primegrid"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "graphTooltip": 2,
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "Probelauf",
+      "gridPos": {
+        "h": 3,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Probelauf:** Der Regler berechnet nur, was er schalten *würde*. Es wird nichts ein- oder ausgeschaltet. Die Werte für den Überschuss beziehen sich auf die 15-Minuten-Mittel; die Leistung der Rechner ist bis zur Anbindung der Steckdosen unbekannt und zählt als 0 W (läuft einer davon tatsächlich, ist der wahre Überschuss größer)."
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Überschuss (15-Min-Mittel)",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 3
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "unit": "watt",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "compute:latest",
+          "field": "headroom_w"
+        }
+      ],
+      "description": "Erzeugung aller drei Anlagen minus Hausverbrauch ohne die Rechner: die Leistung, die sonst ins Netz ginge oder die Batterie lädt."
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Prognose Überschuss (nächste Stunde)",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 3
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          },
+          "unit": "watt",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "compute:latest",
+          "field": "forecast_headroom_w"
+        }
+      ],
+      "description": "Gemessene Erzeugung, skaliert mit dem Verlauf der Strahlungsprognose (nächste gegen letzte Stunde), minus Hausverbrauch der letzten Stunde."
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Batterie",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 3
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          },
+          "unit": "percent",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "compute:latest",
+          "field": "soc"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Erzeugung / Haus (15 Min)",
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 18,
+        "y": 3
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "unit": "watt",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "compute:latest",
+          "field": "production_w"
+        }
+      ],
+      "description": "Erzeugung aller drei Anlagen."
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Haus",
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 21,
+        "y": 3
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          },
+          "unit": "watt",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "compute:latest",
+          "field": "house_w"
+        }
+      ],
+      "description": "Hausverbrauch (ohne die Leistung der Rechner, sobald bekannt)."
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "winola: Soll-Zustand",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 7
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "EIN",
+                  "color": "green",
+                  "index": 0
+                },
+                "0": {
+                  "text": "AUS",
+                  "color": "text",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/"
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "compute:winola:latest",
+          "field": "desired"
+        }
+      ],
+      "description": "Was der Regler jetzt schalten würde (Probelauf)."
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "winola: Begründung",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 7
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/"
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "compute:winola:latest",
+          "field": "reason"
+        }
+      ],
+      "description": "Warum der Regler so entschieden hat."
+    },
+    {
+      "id": 9,
+      "type": "stat",
+      "title": "gamer: Soll-Zustand",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 7
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "EIN",
+                  "color": "green",
+                  "index": 0
+                },
+                "0": {
+                  "text": "AUS",
+                  "color": "text",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/"
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "compute:gamer:latest",
+          "field": "desired"
+        }
+      ],
+      "description": "Was der Regler jetzt schalten würde (Probelauf)."
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "gamer: Begründung",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 7
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/"
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "compute:gamer:latest",
+          "field": "reason"
+        }
+      ],
+      "description": "Warum der Regler so entschieden hat."
+    },
+    {
+      "id": 11,
+      "type": "stat",
+      "title": "imac: Soll-Zustand",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 7
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "EIN",
+                  "color": "green",
+                  "index": 0
+                },
+                "0": {
+                  "text": "AUS",
+                  "color": "text",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/"
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "compute:imac:latest",
+          "field": "desired"
+        }
+      ],
+      "description": "Was der Regler jetzt schalten würde (Probelauf)."
+    },
+    {
+      "id": 12,
+      "type": "stat",
+      "title": "imac: Begründung",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 7
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/"
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "compute:imac:latest",
+          "field": "reason"
+        }
+      ],
+      "description": "Warum der Regler so entschieden hat."
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Überschuss, Prognose und Einschaltschwellen",
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 11
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Überschuss"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 12
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Prognose Überschuss"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    10
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "Einschaltschwelle.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "gray"
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 1
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    4,
+                    6
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:compute:headroom_w",
+          "legend": "Überschuss"
+        },
+        {
+          "refId": "B",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:compute:forecast_headroom_w",
+          "legend": "Prognose Überschuss"
+        },
+        {
+          "refId": "C",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:compute:winola:threshold_on_w",
+          "legend": "Einschaltschwelle bis winola"
+        },
+        {
+          "refId": "D",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:compute:gamer:threshold_on_w",
+          "legend": "Einschaltschwelle bis gamer"
+        },
+        {
+          "refId": "E",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:compute:imac:threshold_on_w",
+          "legend": "Einschaltschwelle bis imac"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "state-timeline",
+      "title": "Soll-Zustand der Rechner (Probelauf)",
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 20
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "EIN",
+                  "color": "green",
+                  "index": 0
+                },
+                "0": {
+                  "text": "AUS",
+                  "color": "text",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "custom": {
+            "fillOpacity": 75
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "mergeValues": true,
+        "showValue": "auto",
+        "alignValue": "left",
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:compute:winola:desired",
+          "legend": "winola"
+        },
+        {
+          "refId": "B",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:compute:gamer:desired",
+          "legend": "gamer"
+        },
+        {
+          "refId": "C",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:compute:imac:desired",
+          "legend": "imac"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "table",
+      "title": "Ereignisse (Probelauf, neueste zuerst)",
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 26
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": false,
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "cli",
+          "query": "lrange compute:events 0 49"
+        }
+      ]
+    }
+  ]
+}
