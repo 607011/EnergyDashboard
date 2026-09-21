@@ -59,6 +59,18 @@ LONG_TERM_FIELDS = {
 # Fields that only exist in the "latest" hash, not as time series of their own.
 HASH_ONLY_FIELDS = {"electric_reading_kwh", "electric_reading_at", "thermal_reading_kwh"}
 
+ONE_DAY_MS = 24 * 60 * 60 * 1000
+
+# Long-term compaction: daily min/mean/max of a few temperatures, kept forever, so multi-year
+# statistics stay cheap although the raw series only cover TS_RETENTION_DAYS. Days are UTC
+# buckets, as with the SolarEdge rollups.
+ROLLUP_FIELDS = ("outdoor_temp", "dhw_temp")
+COMPACTION_RULES = [
+    (f"ts:weishaupt:{DEVICE_KEY}:{field}", f"ts:weishaupt:{DEVICE_KEY}:{field}:daily_{name}", aggregation)
+    for field in ROLLUP_FIELDS
+    for name, aggregation in (("avg", "avg"), ("min", "min"), ("max", "max"))
+]
+
 MAX_BACKOFF = 60
 MAX_BLOCK = 5  # protocol limit of the heat pump
 
@@ -248,6 +260,39 @@ def derive_efficiency(r: redis.Redis) -> tuple[dict, dict]:
     return values, at
 
 
+def sync_retention(r: redis.Redis) -> None:
+    """TS.ADD's RETENTION option only applies when it creates a series, so a changed
+    TS_RETENTION_DAYS needs this for the raw series that already exist. Series kept forever
+    (manual readings, values derived from them, the daily rollups) are left alone."""
+    keep_forever = {dest for _, dest, _ in COMPACTION_RULES}
+    keep_forever |= {f"ts:weishaupt:{DEVICE_KEY}:{field}" for field in LONG_TERM_FIELDS | HASH_ONLY_FIELDS}
+    changed = 0
+    for key in r.scan_iter(match=f"ts:weishaupt:{DEVICE_KEY}:*"):
+        if key in keep_forever:
+            continue
+        if r.ts().info(key).retention_msecs != TS_RETENTION_MS:
+            r.ts().alter(key, retention_msecs=TS_RETENTION_MS)
+            changed += 1
+    if changed:
+        log.info("Updated retention on %d existing series to %d days", changed, TS_RETENTION_MS // ONE_DAY_MS)
+
+
+def ensure_compaction_rules(r: redis.Redis) -> None:
+    for source_key, dest_key, aggregation in COMPACTION_RULES:
+        if not r.exists(source_key):
+            field = source_key.rsplit(":", 1)[-1]
+            r.ts().create(source_key, retention_msecs=TS_RETENTION_MS, duplicate_policy="last",
+                          labels={"device": DEVICE_KEY, "field": field})
+        if not r.exists(dest_key):
+            r.ts().create(dest_key, retention_msecs=0, labels={"device": DEVICE_KEY, "aggregation": aggregation, "rollup": "daily"})
+        try:
+            r.ts().createrule(source_key, dest_key, aggregation_type=aggregation, bucket_size_msec=ONE_DAY_MS)
+            log.info("Compaction rule created: %s -> %s (%s, daily)", source_key, dest_key, aggregation)
+        except redis.ResponseError as exc:
+            if "already has" not in str(exc):
+                raise
+
+
 def log_device(r: redis.Redis, values: dict, ts_ms: int, ts_at: dict | None = None) -> None:
     latest_key = f"weishaupt:{DEVICE_KEY}:latest"
     ts_at = ts_at or {}
@@ -282,6 +327,8 @@ def main() -> None:
     r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB, password=REDIS_PASSWORD, decode_responses=True)
     r.ping()
     log.info("Connected to Redis at %s:%s", REDIS_HOST, REDIS_PORT)
+    sync_retention(r)
+    ensure_compaction_rules(r)
 
     client = ModbusTcpClient(HOST, port=PORT, timeout=TIMEOUT)
     backoff = 1

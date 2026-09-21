@@ -8,7 +8,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 3,
+  "version": 4,
   "refresh": "1m",
   "graphTooltip": 2,
   "time": {
@@ -1218,6 +1218,222 @@
           "command": "ts.range",
           "keyName": "ts:weishaupt:wgb14:jaz_last_interval",
           "legend": "JAZ letzter Zeitraum"
+        }
+      ]
+    },
+    {
+      "id": 30,
+      "type": "timeseries",
+      "title": "Außentemperatur: Tageswerte",
+      "timeFrom": "365d",
+      "description": "Tagesminimum, -mittel und -maximum (UTC-Tage), dauerhaft gespeichert. Die Kurve beginnt mit dem ersten vollständigen Tag nach dem Einrichten; die Rohdaten selbst reichen nur 365 Tage zurück.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 32
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "decimals": 1,
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "auto",
+            "spanNulls": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Minimum"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Mittel"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Maximum"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:weishaupt:wgb14:outdoor_temp:daily_min",
+          "legend": "Minimum"
+        },
+        {
+          "refId": "B",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:weishaupt:wgb14:outdoor_temp:daily_avg",
+          "legend": "Mittel"
+        },
+        {
+          "refId": "C",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:weishaupt:wgb14:outdoor_temp:daily_max",
+          "legend": "Maximum"
+        }
+      ]
+    },
+    {
+      "id": 31,
+      "type": "timeseries",
+      "title": "Warmwasser-Temperatur: Tageswerte",
+      "timeFrom": "365d",
+      "description": "Tagesminimum, -mittel und -maximum (UTC-Tage), dauerhaft gespeichert. Die Kurve beginnt mit dem ersten vollständigen Tag nach dem Einrichten; die Rohdaten selbst reichen nur 365 Tage zurück.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 32
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "decimals": 1,
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "auto",
+            "spanNulls": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Minimum"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "light-blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Mittel"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Maximum"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:weishaupt:wgb14:dhw_temp:daily_min",
+          "legend": "Minimum"
+        },
+        {
+          "refId": "B",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:weishaupt:wgb14:dhw_temp:daily_avg",
+          "legend": "Mittel"
+        },
+        {
+          "refId": "C",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:weishaupt:wgb14:dhw_temp:daily_max",
+          "legend": "Maximum"
         }
       ]
     }

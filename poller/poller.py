@@ -187,7 +187,8 @@ def sync_retention(r: redis.Redis) -> None:
     rollup_keys = {dest for _, dest, _ in COMPACTION_RULES}
     changed = 0
     for key in r.scan_iter(match="ts:*"):
-        if key in rollup_keys:
+        # weishaupt-poller manages its own series, including ones kept forever
+        if key in rollup_keys or key.startswith("ts:weishaupt:"):
             continue
         if r.ts().info(key).retention_msecs != TS_RETENTION_MS:
             r.ts().alter(key, retention_msecs=TS_RETENTION_MS)

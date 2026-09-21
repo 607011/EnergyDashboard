@@ -237,6 +237,14 @@ dashboard **Wärmepumpe: Weishaupt WGB 14** (`weishaupt-wgb14.json`) shows the
 temperatures, the operating status over time and the values from the manual
 readings (electricity, thermal energy, JAZ).
 
+**Long-term compaction:** the raw series keep `TS_RETENTION_DAYS` (365) days. For the
+outside temperature and the hot-water temperature (`outdoor_temp`, `dhw_temp`) the
+poller also keeps daily minimum, mean and maximum forever
+(`ts:weishaupt:<name>:<field>:daily_min|avg|max`, UTC days), plotted in the two
+"Tageswerte" panels. The first full day appears after the rules are created. The manual
+readings and the values derived from them are stored without a time limit as well;
+`sync_retention` in both pollers leaves those alone.
+
 ### Electricity use and JAZ from manual readings
 
 A seasonal performance factor (JAZ) is thermal energy divided by electricity
