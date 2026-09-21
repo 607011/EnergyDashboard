@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Draws the app icons for the home-screen app (a sun on a dark background), using only the stdlib.
 
-    python3 scripts/make-pwa-icons.py
+    python3 scripts/make-pwa-icons.py                    # the home-screen app icons
+    python3 scripts/make-pwa-icons.py --app-icon out.png  # 1024 px icon for the macOS app
 
 Writes PNGs to caddy/pwa/. Full-bleed squares: iOS and Android round or mask the corners
 themselves. The "maskable" variant keeps everything inside the central safe zone.
@@ -66,6 +67,12 @@ def write_png(path: Path, size: int, scale: float) -> None:
 
 
 if __name__ == "__main__":
+    import sys
+
+    if len(sys.argv) == 3 and sys.argv[1] == "--app-icon":
+        # 1024 px source for the macOS app icon (macos-app/Makefile scales it down)
+        write_png(Path(sys.argv[2]), 1024, 0.8)
+        raise SystemExit
     out = Path(__file__).resolve().parent.parent / "caddy" / "pwa"
     out.mkdir(parents=True, exist_ok=True)
     write_png(out / "apple-touch-icon.png", 180, 1.0)

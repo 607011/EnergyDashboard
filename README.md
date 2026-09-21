@@ -467,16 +467,21 @@ the View menu, Cmd-T) keeps the window above all others, including across Spaces
   15 minutes old, otherwise it counts as unknown. With an unknown production figure the total is
   marked `*` and the colour rule is suspended, since a missing system would make the production
   look too low and the consumption falsely red.
-- **Setup:**
+- **Setup:** from `macos-app/` (or `make -C macos-app <target>`):
 
   ```bash
-  macos-app/create-token.sh      # read-only Grafana service account + token -> ~/Library/Application Support/PV Monitor/config.json
-  macos-app/build.sh --install   # builds build/PV Monitor.app and copies it to /Applications
+  make install    # gets a read-only Grafana token (if none yet), builds the app, copies it to /Applications
   ```
 
-  The config file (`{"url": ..., "token": ...}`, mode 600) can also be written by hand; the
-  environment variables `PV_URL` and `PV_TOKEN` override it. The app is signed ad hoc, which is
-  enough for the Mac it was built on; elsewhere, right-click > Open once.
+  The token comes from a read-only Grafana service account (`pv-monitor`, role Viewer) that
+  `make token` creates using `GRAFANA_ADMIN_PASSWORD` from `.env`; the app's address is
+  `GRAFANA_ROOT_URL`. It is written to `~/Library/Application Support/PV Monitor/config.json`
+  (`{"url": ..., "token": ...}`, mode 600). `make install` only fetches a token if that file is
+  missing, so repeated installs don't pile tokens up (`make install NEW_TOKEN=1` forces a new one;
+  old tokens stay valid until deleted in Grafana). The file can also be written by hand, and the
+  environment variables `PV_URL` and `PV_TOKEN` override it. Other targets: `make build`,
+  `make test`, `make run`, `make clean`. The app is signed ad hoc, which is enough for the Mac it
+  was built on; elsewhere, right-click > Open once.
 - **Testing without a GUI:** `PVMonitor --selftest` checks the averaging and the colour rule,
   `PVMonitor --print` fetches once and prints the figures, `PVMonitor --snapshot out.png [red]`
   renders the window with sample data to a PNG.
