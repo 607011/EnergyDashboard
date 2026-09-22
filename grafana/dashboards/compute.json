@@ -7,7 +7,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 3,
+  "version": 4,
   "refresh": "1m",
   "graphTooltip": 2,
   "time": {
@@ -399,8 +399,8 @@
           "refId": "E",
           "type": "timeSeries",
           "command": "ts.range",
-          "keyName": "ts:compute:imac:threshold_on_w",
-          "legend": "Einschaltschwelle bis imac"
+          "keyName": "ts:compute:imacola2:threshold_on_w",
+          "legend": "Einschaltschwelle bis imacola2"
         },
         {
           "refId": "F",
@@ -493,8 +493,8 @@
           "refId": "C",
           "type": "timeSeries",
           "command": "ts.range",
-          "keyName": "ts:compute:imac:desired",
-          "legend": "imac"
+          "keyName": "ts:compute:imacola2:desired",
+          "legend": "imacola2"
         },
         {
           "refId": "D",
@@ -911,7 +911,7 @@
     {
       "id": 22,
       "type": "stat",
-      "title": "imac: Soll-Zustand",
+      "title": "imacola2: Soll-Zustand",
       "gridPos": {
         "h": 6,
         "w": 2,
@@ -972,7 +972,7 @@
           "refId": "A",
           "type": "command",
           "command": "hget",
-          "keyName": "compute:imac:latest",
+          "keyName": "compute:imacola2:latest",
           "field": "desired"
         }
       ]
@@ -980,7 +980,7 @@
     {
       "id": 23,
       "type": "stat",
-      "title": "imac: Aktor",
+      "title": "imacola2: Aktor",
       "gridPos": {
         "h": 6,
         "w": 2,
@@ -1041,7 +1041,7 @@
           "refId": "A",
           "type": "command",
           "command": "hget",
-          "keyName": "compute:imac:latest",
+          "keyName": "compute:imacola2:latest",
           "field": "actuated"
         }
       ],
@@ -1050,7 +1050,7 @@
     {
       "id": 24,
       "type": "stat",
-      "title": "imac: Begründung",
+      "title": "imacola2: Begründung",
       "gridPos": {
         "h": 6,
         "w": 2,
@@ -1086,7 +1086,7 @@
           "refId": "A",
           "type": "command",
           "command": "hget",
-          "keyName": "compute:imac:latest",
+          "keyName": "compute:imacola2:latest",
           "field": "reason"
         }
       ]
