@@ -66,6 +66,11 @@ WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
 
 MAX_BACKOFF = 60
 
+# Meter/battery IDs ever seen, to tell "not installed" from "read failed this cycle" (see
+# read_expected). Boxed in a list so poll_once can rebind them without a `global` statement.
+_known_meter_ids: list = [None]
+_known_battery_ids: list = [None]
+
 running = True
 
 
@@ -309,6 +314,24 @@ def fetch_weather(lat: float, lon: float) -> dict:
     }
 
 
+def read_expected(known_ids: set | None, actual: dict, kind: str) -> tuple[set, bool]:
+    """Tracks which meter/battery IDs a device has ever reported, to tell "no such device
+    installed" (0 is correct, e.g. no meter at all) apart from "a Modbus read that normally
+    returns them came back incomplete this cycle" (0 would be a silent, wrong reading).
+
+    First call for a fresh `known_ids` (None) bootstraps it from whatever this cycle sees.
+    Returns (updated known_ids, complete) -- complete is False if a previously seen ID is
+    missing now.
+    """
+    if known_ids is None:
+        return set(actual.keys()), True
+    missing = known_ids - actual.keys()
+    if missing:
+        log.warning("%s read incomplete this cycle (missing %s, got %s)", kind, sorted(missing), sorted(actual.keys()))
+        return known_ids, False
+    return known_ids | actual.keys(), True
+
+
 def hoymiles_power(r: redis.Redis, now_ms: int, is_night: bool) -> float | None:
     """Combined AC power (W) of all Hoymiles microinverters, as last stored by hoymiles-poller.
 
@@ -354,12 +377,15 @@ def poll_once(inverter: solaredge_modbus.Inverter, r: redis.Redis) -> None:
     # inflated by the battery's contribution flowing onto the same bus.
     # instantaneous_power is signed (+ while charging, - while discharging),
     # so adding it back unconditionally corrects both directions at once.
-    battery_power = 0.0
-    for battery_id, battery in inverter.batteries().items():
+    batteries = inverter.batteries()
+    known_battery_ids, batteries_complete = read_expected(_known_battery_ids[0], batteries, "Battery")
+    _known_battery_ids[0] = known_battery_ids
+    battery_power = 0.0 if batteries_complete else None
+    for battery_id, battery in batteries.items():
         values = apply_scale_factors(battery)
         add_status_label(values, solaredge_modbus.BATTERY_STATUS_MAP)
         log_device(r, f"battery:{battery_id.lower()}", values, ts_ms)
-        if isinstance(values.get("instantaneous_power"), (int, float)):
+        if batteries_complete and isinstance(values.get("instantaneous_power"), (int, float)):
             battery_power += values["instantaneous_power"]
 
     # The two terms are measured separately (DC input vs. battery terminals, in different
@@ -367,7 +393,7 @@ def poll_once(inverter: solaredge_modbus.Inverter, r: redis.Redis) -> None:
     # converter losses and timing skew. The panels can't deliver negative power: the
     # published value is clamped at 0, the unclamped sum is kept as power_pv_total_raw.
     power_dc = inverter_values.get("power_dc")
-    if isinstance(power_dc, (int, float)):
+    if isinstance(power_dc, (int, float)) and battery_power is not None:
         pv_total_raw = power_dc + battery_power
         inverter_values["power_pv_total_raw"] = pv_total_raw
         inverter_values["power_pv_total"] = max(0.0, pv_total_raw)
@@ -376,13 +402,16 @@ def poll_once(inverter: solaredge_modbus.Inverter, r: redis.Redis) -> None:
     # (verified against the SolarEdge app). Whatever the inverter puts out that
     # isn't exported must have gone to the house -- and whatever is imported
     # went to the house too -- so this holds regardless of charge/discharge state.
-    meter_power = 0.0
+    meters = inverter.meters()
+    known_meter_ids, meters_complete = read_expected(_known_meter_ids[0], meters, "Meter")
+    _known_meter_ids[0] = known_meter_ids
+    meter_power = 0.0 if meters_complete else None
     export_wh = None
     import_wh = None
-    for meter_id, meter in inverter.meters().items():
+    for meter_id, meter in meters.items():
         values = apply_scale_factors(meter)
         log_device(r, f"meter:{meter_id.lower()}", values, ts_ms)
-        if isinstance(values.get("power"), (int, float)):
+        if meters_complete and isinstance(values.get("power"), (int, float)):
             meter_power += values["power"]
         if isinstance(values.get("export_energy_active"), (int, float)):
             export_wh = (export_wh or 0.0) + values["export_energy_active"]
@@ -401,7 +430,7 @@ def poll_once(inverter: solaredge_modbus.Inverter, r: redis.Redis) -> None:
 
     power_ac = inverter_values.get("power_ac")
     house_consumption = None
-    if isinstance(power_ac, (int, float)):
+    if isinstance(power_ac, (int, float)) and meter_power is not None:
         # Same separately-measured-terms issue as power_pv_total (see there): power_ac and the
         # meter reading can momentarily disagree, and adding the Hoymiles cloud figure (up to 5
         # minutes old) makes it worse. A house cannot have negative consumption, so both figures
