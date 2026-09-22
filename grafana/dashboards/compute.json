@@ -7,7 +7,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 5,
+  "version": 6,
   "refresh": "1m",
   "graphTooltip": 2,
   "time": {
@@ -267,7 +267,7 @@
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 14
+        "y": 27
       },
       "datasource": {
         "type": "redis-datasource",
@@ -419,7 +419,7 @@
         "h": 6,
         "w": 24,
         "x": 0,
-        "y": 23
+        "y": 36
       },
       "datasource": {
         "type": "redis-datasource",
@@ -513,7 +513,7 @@
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 29
+        "y": 42
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1283,7 +1283,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 38
+        "y": 51
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1318,7 +1318,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 38
+        "y": 51
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1371,7 +1371,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 46
+        "y": 14
       },
       "panels": []
     },
@@ -1384,7 +1384,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 47
+        "y": 15
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1429,7 +1429,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 47
+        "y": 15
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1474,7 +1474,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 47
+        "y": 15
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1519,7 +1519,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 47
+        "y": 15
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1563,7 +1563,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 51
+        "y": 19
       },
       "datasource": {
         "type": "redis-datasource",
