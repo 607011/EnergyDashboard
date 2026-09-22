@@ -154,8 +154,26 @@ same grid meter, so it leaves out what they supply. The poller therefore also
 writes `house_consumption_total`, which adds the current power of every Hoymiles
 microinverter (read from Redis, so `hoymiles-poller` must be running). Hoymiles
 values older than `HOYMILES_MAX_AGE` seconds (default 900) are ignored, and
-without any fresh Hoymiles data no total is written. Since the cloud data is
-up to 5 minutes old, that share of the total is a little behind.
+without any fresh Hoymiles data no total is written -- *except* at night (sun
+elevation below -3°, from the sun position computed when `LAT`/`LON` are set):
+the Hoymiles microinverters power down completely after dark and stop
+reporting, which by staleness alone looks exactly like a cloud outage, but at
+night they are certainly producing 0 W, so the total keeps recording through
+the night instead of going dark for hours. A genuine daytime outage still
+shows as missing rather than a false 0.
+
+A house cannot have negative consumption; `power_ac` and the meter reading are
+measured separately and can momentarily disagree (same issue as
+`power_pv_total` above), so both `house_consumption` and
+`house_consumption_total` are clamped at 0 and the unclamped values are kept as
+`house_consumption_raw` / `house_consumption_total_raw`.
+
+There is no way to read a genuine whole-house consumption figure over Modbus
+here: our SolarEdge meter is a single bidirectional grid meter
+(`Export+Import`), not a separate CT clamp on the main feed, so this
+subtraction is the only source for it (the SolarEdge app almost certainly
+computes it the same way, just without the Hoymiles part and its staleness
+issues).
 
 ## Hoymiles microinverters
 

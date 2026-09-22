@@ -309,18 +309,24 @@ def fetch_weather(lat: float, lon: float) -> dict:
     }
 
 
-def hoymiles_power(r: redis.Redis, now_ms: int) -> float | None:
+def hoymiles_power(r: redis.Redis, now_ms: int, is_night: bool) -> float | None:
     """Combined AC power (W) of all Hoymiles microinverters, as last stored by hoymiles-poller.
 
     Per-inverter hashes are recognised by their per-string field p1_w; the station hash holds
-    the same power again as a total and must not be counted twice. Returns None if no
-    inverter has fresh data (cloud outage, hoymiles-poller not running).
+    the same power again as a total and must not be counted twice. Returns None if no inverter
+    has fresh data and it isn't night (cloud outage, hoymiles-poller not running): a genuine
+    outage must not be masked as 0. At night the microinverters power down entirely and stop
+    reporting, which is indistinguishable from an outage by staleness alone -- but at night they
+    are certainly producing 0 W, so known sun position resolves the ambiguity and keeps
+    house_consumption_total from going dark for hours every night.
     """
     total = None
+    any_hoymiles = False
     for key in r.scan_iter(match="hoymiles:*:latest"):
         h = r.hgetall(key)
         if "p1_w" not in h:
             continue
+        any_hoymiles = True
         try:
             fresh = now_ms - int(h["updated_at"]) <= HOYMILES_MAX_AGE * 1000
             power = float(h.get("power_w") or 0)
@@ -328,6 +334,8 @@ def hoymiles_power(r: redis.Redis, now_ms: int) -> float | None:
             continue
         if fresh:
             total = (total or 0.0) + power
+    if total is None and any_hoymiles and is_night:
+        return 0.0
     return total
 
 
@@ -381,24 +389,38 @@ def poll_once(inverter: solaredge_modbus.Inverter, r: redis.Redis) -> None:
         if isinstance(values.get("import_energy_active"), (int, float)):
             import_wh = (import_wh or 0.0) + values["import_energy_active"]
 
+    # sun position is computed before house consumption because it decides whether missing
+    # Hoymiles data means "night" (0 W) or "unknown" (see hoymiles_power)
+    elevation = None
+    if LAT is not None and LON is not None:
+        azimuth, elevation = solar_position(datetime.now(timezone.utc), LAT, LON)
+        log_device(r, "sun", {"azimuth": round(azimuth, 2), "elevation": round(elevation, 2)}, ts_ms)
+    # A few degrees below the horizon rather than exactly 0: civil twilight still has enough light
+    # that a microinverter could technically be producing a trickle, however unlikely in practice.
+    is_night = elevation is not None and elevation < -3.0
+
     power_ac = inverter_values.get("power_ac")
     house_consumption = None
     if isinstance(power_ac, (int, float)):
-        house_consumption = power_ac - meter_power
+        # Same separately-measured-terms issue as power_pv_total (see there): power_ac and the
+        # meter reading can momentarily disagree, and adding the Hoymiles cloud figure (up to 5
+        # minutes old) makes it worse. A house cannot have negative consumption, so both figures
+        # are clamped at 0; the unclamped values are kept as ..._raw.
+        house_raw = power_ac - meter_power
+        inverter_values["house_consumption_raw"] = house_raw
+        house_consumption = max(0.0, house_raw)
         inverter_values["house_consumption"] = house_consumption
         # The Hoymiles microinverters feed the house behind the same grid meter, so the
         # SolarEdge balance (AC power minus meter) leaves out what they supply.
-        hoymiles = hoymiles_power(r, ts_ms)
+        hoymiles = hoymiles_power(r, ts_ms, is_night)
         if hoymiles is not None:
-            inverter_values["house_consumption_total"] = house_consumption + hoymiles
+            total_raw = house_raw + hoymiles
+            inverter_values["house_consumption_total_raw"] = total_raw
+            inverter_values["house_consumption_total"] = max(0.0, total_raw)
 
     log_device(r, "inverter", inverter_values, ts_ms)
 
     update_daily_totals(r, ts_ms, inverter_values.get("power_pv_total"), house_consumption, export_wh, import_wh)
-
-    if LAT is not None and LON is not None:
-        azimuth, elevation = solar_position(datetime.now(timezone.utc), LAT, LON)
-        log_device(r, "sun", {"azimuth": round(azimuth, 2), "elevation": round(elevation, 2)}, ts_ms)
 
 
 def main() -> None:

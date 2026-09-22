@@ -6,7 +6,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 2,
+  "version": 3,
   "refresh": "30s",
   "graphTooltip": 2,
   "time": {
@@ -1061,7 +1061,7 @@
       "id": 21,
       "type": "stat",
       "title": "Hausverbrauch",
-      "description": "Energiebilanz: AC-Ausgangsleistung minus Netzleistung (positiv=Einspeisung). Was der Wechselrichter nicht ins Netz exportiert bzw. was zusätzlich importiert wird, geht ins Haus – nur die SolarEdge-Seite: Was die Hoymiles-Wechselrichter ins Haus speisen, ist nicht enthalten (der gesamte Hausverbrauch steht in der Gesamtübersicht).",
+      "description": "Energiebilanz: AC-Ausgangsleistung minus Netzleistung (positiv=Einspeisung). Was der Wechselrichter nicht ins Netz exportiert bzw. was zusätzlich importiert wird, geht ins Haus – nur die SolarEdge-Seite: Was die Hoymiles-Wechselrichter ins Haus speisen, ist nicht enthalten (der gesamte Hausverbrauch steht in der Gesamtübersicht). Werte unter 0 W werden auf 0 begrenzt.",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -1101,7 +1101,7 @@
       "id": 22,
       "type": "timeseries",
       "title": "Hausverbrauch (Verlauf)",
-      "description": "Berechnet aus AC-Ausgangsleistung minus Netzleistung – nur die SolarEdge-Seite: Was die Hoymiles-Wechselrichter ins Haus speisen, ist nicht enthalten (der gesamte Hausverbrauch steht in der Gesamtübersicht).",
+      "description": "Berechnet aus AC-Ausgangsleistung minus Netzleistung – nur die SolarEdge-Seite: Was die Hoymiles-Wechselrichter ins Haus speisen, ist nicht enthalten (der gesamte Hausverbrauch steht in der Gesamtübersicht). Werte unter 0 W werden auf 0 begrenzt.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -1141,7 +1141,7 @@
       "id": 23,
       "type": "stat",
       "title": "Heute: PV-Erzeugung",
-      "description": "Seit Mitternacht (lokale Zeit) trapezintegrierte PV-Gesamtleistung. Läuft über den Tag hoch, setzt sich um Mitternacht zurück. Übersteht Poller-Neustarts (Stand wird in Redis gehalten).",
+      "description": "Seit Mitternacht (lokale Zeit) trapezintegrierte PV-Gesamtleistung. Läuft über den Tag hoch, setzt sich um Mitternacht zurück. Übersteht Poller-Neustarts (Stand wird in Redis gehalten). Werte unter 0 W werden auf 0 begrenzt.",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -1186,7 +1186,7 @@
       "id": 24,
       "type": "stat",
       "title": "Heute: Hausverbrauch",
-      "description": "Seit Mitternacht (lokale Zeit) trapezintegrierter Hausverbrauch – nur die SolarEdge-Seite: Was die Hoymiles-Wechselrichter ins Haus speisen, ist nicht enthalten (der gesamte Hausverbrauch steht in der Gesamtübersicht).",
+      "description": "Seit Mitternacht (lokale Zeit) trapezintegrierter Hausverbrauch – nur die SolarEdge-Seite: Was die Hoymiles-Wechselrichter ins Haus speisen, ist nicht enthalten (der gesamte Hausverbrauch steht in der Gesamtübersicht). Werte unter 0 W werden auf 0 begrenzt.",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -1231,7 +1231,7 @@
       "id": 25,
       "type": "stat",
       "title": "Heute: Einspeisung",
-      "description": "Seit Mitternacht: heutiger Zuwachs des Meter-Zaehlers export_energy_active (Hardware-gemessen, exakt).",
+      "description": "Seit Mitternacht: heutiger Zuwachs des Meter-Zaehlers export_energy_active (Hardware-gemessen, exakt). Werte unter 0 W werden auf 0 begrenzt.",
       "gridPos": {
         "h": 4,
         "w": 6,
@@ -1276,7 +1276,7 @@
       "id": 26,
       "type": "stat",
       "title": "Heute: Bezug",
-      "description": "Seit Mitternacht: heutiger Zuwachs des Meter-Zaehlers import_energy_active (Hardware-gemessen, exakt).",
+      "description": "Seit Mitternacht: heutiger Zuwachs des Meter-Zaehlers import_energy_active (Hardware-gemessen, exakt). Werte unter 0 W werden auf 0 begrenzt.",
       "gridPos": {
         "h": 4,
         "w": 6,
