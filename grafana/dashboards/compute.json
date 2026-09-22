@@ -7,7 +7,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 4,
+  "version": 5,
   "refresh": "1m",
   "graphTooltip": 2,
   "time": {
@@ -1364,14 +1364,27 @@
     },
     {
       "id": 30,
+      "type": "row",
+      "title": "Steckdosen (Shelly, gemessene Leistung)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 46
+      },
+      "panels": []
+    },
+    {
+      "id": 31,
       "type": "stat",
-      "title": "gamer: gemessene Leistung (Shelly)",
-      "description": "Reale Leistung des Shelly-Steckers an gamer. Sobald ein Gerät eine Shelly-Messung hat, verwendet der Regler sie automatisch statt der geschätzten Watt.",
+      "title": "gamer: Leistung",
+      "description": "Von diesem Stecker aus dem Regler übernommene Leistung.",
       "gridPos": {
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 46
+        "y": 47
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1408,14 +1421,15 @@
       ]
     },
     {
-      "id": 31,
-      "type": "timeseries",
-      "title": "gamer: Leistungsverlauf (Shelly)",
+      "id": 32,
+      "type": "stat",
+      "title": "winola: Leistung",
+      "description": "Von diesem Stecker aus dem Regler übernommene Leistung.",
       "gridPos": {
         "h": 4,
-        "w": 18,
+        "w": 6,
         "x": 6,
-        "y": 46
+        "y": 47
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1424,16 +1438,207 @@
       "fieldConfig": {
         "defaults": {
           "unit": "watt",
+          "decimals": 0,
           "color": {
             "mode": "fixed",
-            "fixedColor": "blue"
-          },
-          "custom": {
-            "lineWidth": 2,
-            "fillOpacity": 10
+            "fixedColor": "green"
           }
         },
         "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "shelly:winola:latest",
+          "field": "power_w"
+        }
+      ]
+    },
+    {
+      "id": 33,
+      "type": "stat",
+      "title": "imacola2: Leistung",
+      "description": "Von diesem Stecker aus dem Regler übernommene Leistung.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 47
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "purple"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "shelly:imacola2:latest",
+          "field": "power_w"
+        }
+      ]
+    },
+    {
+      "id": 34,
+      "type": "stat",
+      "title": "notyetknown: Leistung",
+      "description": "Noch keinem Gerät in COMPUTE_MACHINES zugeordnet -- wird nur aufgezeichnet.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 47
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "shelly:notyetknown:latest",
+          "field": "power_w"
+        }
+      ]
+    },
+    {
+      "id": 35,
+      "type": "timeseries",
+      "title": "Leistungsverlauf aller Steckdosen",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 51
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "gamer"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "winola"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "imacola2"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "purple"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "notyetknown"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
@@ -1451,6 +1656,27 @@
           "command": "ts.range",
           "keyName": "ts:shelly:gamer:power_w",
           "legend": "gamer"
+        },
+        {
+          "refId": "B",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:shelly:winola:power_w",
+          "legend": "winola"
+        },
+        {
+          "refId": "C",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:shelly:imacola2:power_w",
+          "legend": "imacola2"
+        },
+        {
+          "refId": "D",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:shelly:notyetknown:power_w",
+          "legend": "notyetknown"
         }
       ]
     }
