@@ -1,13 +1,13 @@
 {
   "uid": "compute-controller",
-  "title": "Rechner-Steuerung (Probelauf)",
-  "description": "Wann die PrimeGrid-Rechner laufen dürften: Überschuss, Prognose und Entscheidungen des Reglers (nur Probelauf, es wird nichts geschaltet).",
+  "title": "Lastmanagement (PV-Überschuss)",
+  "description": "Wann Rechner und Entfeuchter auf PV-Überschuss laufen: eine gemeinsame Prioritätsliste (COMPUTE_MACHINES), Überschuss, Prognose und Entscheidungen. Rechner sind bisher Probelauf, ein Tuya-Gerät wie der Entfeuchter wird bei COMPUTE_MODE=live wirklich geschaltet.",
   "tags": [
     "primegrid"
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "refresh": "1m",
   "graphTooltip": 2,
   "time": {
@@ -18,7 +18,7 @@
     {
       "id": 1,
       "type": "text",
-      "title": "Probelauf",
+      "title": "Lastmanagement",
       "gridPos": {
         "h": 3,
         "w": 24,
@@ -27,7 +27,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**Probelauf:** Der Regler berechnet nur, was er schalten *würde*. Es wird nichts ein- oder ausgeschaltet. Die Werte für den Überschuss beziehen sich auf die 15-Minuten-Mittel; die Leistung der Rechner ist bis zur Anbindung der Steckdosen unbekannt und zählt als 0 W (läuft einer davon tatsächlich, ist der wahre Überschuss größer)."
+        "content": "**Eine Prioritätsliste, mehrere Geräte:** `COMPUTE_MACHINES` legt die Reihenfolge fest, in der Geräte vom PV-Überschuss profitieren -- wer zuerst in der Liste steht, bekommt zuerst Überschuss zugeteilt. Rechner (Art `pc`) sind weiterhin **Probelauf**: es wird nur aufgezeichnet, was geschaltet würde. Ein Tuya-Gerät (Art `tuya`, z. B. der Entfeuchter) wird bei `COMPUTE_MODE=live` **wirklich geschaltet** -- die Spalte „Aktor“ zeigt je Gerät, ob gerade wirklich geschaltet wird oder nur Probelauf läuft. Die zugrunde gelegte Leistung ist eine Schätzung (Typenschild-Watt), bis eine Shelly-Steckdose sie misst."
       }
     },
     {
@@ -260,351 +260,6 @@
       "description": "Hausverbrauch (ohne die Leistung der Rechner, sobald bekannt)."
     },
     {
-      "id": 7,
-      "type": "stat",
-      "title": "winola: Soll-Zustand",
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 0,
-        "y": 7
-      },
-      "datasource": {
-        "type": "redis-datasource",
-        "uid": "solaredge-redis"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [
-            {
-              "type": "value",
-              "options": {
-                "1": {
-                  "text": "EIN",
-                  "color": "green",
-                  "index": 0
-                },
-                "0": {
-                  "text": "AUS",
-                  "color": "text",
-                  "index": 1
-                }
-              }
-            }
-          ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "text",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "/.*/"
-        },
-        "colorMode": "value",
-        "graphMode": "none",
-        "textMode": "auto"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "type": "command",
-          "command": "hget",
-          "keyName": "compute:winola:latest",
-          "field": "desired"
-        }
-      ],
-      "description": "Was der Regler jetzt schalten würde (Probelauf)."
-    },
-    {
-      "id": 8,
-      "type": "stat",
-      "title": "winola: Begründung",
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 4,
-        "y": 7
-      },
-      "datasource": {
-        "type": "redis-datasource",
-        "uid": "solaredge-redis"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "text"
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "/.*/"
-        },
-        "colorMode": "value",
-        "graphMode": "none",
-        "textMode": "auto"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "type": "command",
-          "command": "hget",
-          "keyName": "compute:winola:latest",
-          "field": "reason"
-        }
-      ],
-      "description": "Warum der Regler so entschieden hat."
-    },
-    {
-      "id": 9,
-      "type": "stat",
-      "title": "gamer: Soll-Zustand",
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 8,
-        "y": 7
-      },
-      "datasource": {
-        "type": "redis-datasource",
-        "uid": "solaredge-redis"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [
-            {
-              "type": "value",
-              "options": {
-                "1": {
-                  "text": "EIN",
-                  "color": "green",
-                  "index": 0
-                },
-                "0": {
-                  "text": "AUS",
-                  "color": "text",
-                  "index": 1
-                }
-              }
-            }
-          ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "text",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "/.*/"
-        },
-        "colorMode": "value",
-        "graphMode": "none",
-        "textMode": "auto"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "type": "command",
-          "command": "hget",
-          "keyName": "compute:gamer:latest",
-          "field": "desired"
-        }
-      ],
-      "description": "Was der Regler jetzt schalten würde (Probelauf)."
-    },
-    {
-      "id": 10,
-      "type": "stat",
-      "title": "gamer: Begründung",
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 12,
-        "y": 7
-      },
-      "datasource": {
-        "type": "redis-datasource",
-        "uid": "solaredge-redis"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "text"
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "/.*/"
-        },
-        "colorMode": "value",
-        "graphMode": "none",
-        "textMode": "auto"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "type": "command",
-          "command": "hget",
-          "keyName": "compute:gamer:latest",
-          "field": "reason"
-        }
-      ],
-      "description": "Warum der Regler so entschieden hat."
-    },
-    {
-      "id": 11,
-      "type": "stat",
-      "title": "imac: Soll-Zustand",
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 16,
-        "y": 7
-      },
-      "datasource": {
-        "type": "redis-datasource",
-        "uid": "solaredge-redis"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [
-            {
-              "type": "value",
-              "options": {
-                "1": {
-                  "text": "EIN",
-                  "color": "green",
-                  "index": 0
-                },
-                "0": {
-                  "text": "AUS",
-                  "color": "text",
-                  "index": 1
-                }
-              }
-            }
-          ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "text",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "/.*/"
-        },
-        "colorMode": "value",
-        "graphMode": "none",
-        "textMode": "auto"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "type": "command",
-          "command": "hget",
-          "keyName": "compute:imac:latest",
-          "field": "desired"
-        }
-      ],
-      "description": "Was der Regler jetzt schalten würde (Probelauf)."
-    },
-    {
-      "id": 12,
-      "type": "stat",
-      "title": "imac: Begründung",
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 20,
-        "y": 7
-      },
-      "datasource": {
-        "type": "redis-datasource",
-        "uid": "solaredge-redis"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "text"
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "/.*/"
-        },
-        "colorMode": "value",
-        "graphMode": "none",
-        "textMode": "auto"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "type": "command",
-          "command": "hget",
-          "keyName": "compute:imac:latest",
-          "field": "reason"
-        }
-      ],
-      "description": "Warum der Regler so entschieden hat."
-    },
-    {
       "id": 13,
       "type": "timeseries",
       "title": "Überschuss, Prognose und Einschaltschwellen",
@@ -612,7 +267,7 @@
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 11
+        "y": 14
       },
       "datasource": {
         "type": "redis-datasource",
@@ -746,18 +401,25 @@
           "command": "ts.range",
           "keyName": "ts:compute:imac:threshold_on_w",
           "legend": "Einschaltschwelle bis imac"
+        },
+        {
+          "refId": "F",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:compute:dehumidifier:threshold_on_w",
+          "legend": "Einschaltschwelle bis dehumidifier"
         }
       ]
     },
     {
       "id": 14,
       "type": "state-timeline",
-      "title": "Soll-Zustand der Rechner (Probelauf)",
+      "title": "Soll-Zustand aller Geräte",
       "gridPos": {
         "h": 6,
         "w": 24,
         "x": 0,
-        "y": 20
+        "y": 23
       },
       "datasource": {
         "type": "redis-datasource",
@@ -833,18 +495,25 @@
           "command": "ts.range",
           "keyName": "ts:compute:imac:desired",
           "legend": "imac"
+        },
+        {
+          "refId": "D",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:compute:dehumidifier:desired",
+          "legend": "dehumidifier"
         }
       ]
     },
     {
       "id": 15,
       "type": "table",
-      "title": "Ereignisse (Probelauf, neueste zuerst)",
+      "title": "Ereignisse (neueste zuerst)",
       "gridPos": {
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 26
+        "y": 29
       },
       "datasource": {
         "type": "redis-datasource",
@@ -870,6 +539,826 @@
           "refId": "A",
           "type": "cli",
           "query": "lrange compute:events 0 49"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "type": "stat",
+      "title": "winola: Soll-Zustand",
+      "gridPos": {
+        "h": 6,
+        "w": 2,
+        "x": 0,
+        "y": 7
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "EIN",
+                  "color": "green",
+                  "index": 0
+                },
+                "0": {
+                  "text": "AUS",
+                  "color": "text",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/"
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "compute:winola:latest",
+          "field": "desired"
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "type": "stat",
+      "title": "winola: Aktor",
+      "gridPos": {
+        "h": 6,
+        "w": 2,
+        "x": 2,
+        "y": 7
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "geschaltet",
+                  "color": "orange",
+                  "index": 0
+                },
+                "0": {
+                  "text": "Probelauf",
+                  "color": "text",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/"
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "compute:winola:latest",
+          "field": "actuated"
+        }
+      ],
+      "description": "Ob dieses Gerät gerade wirklich geschaltet wird (COMPUTE_MODE=live und Art \"tuya\") oder nur Probelauf ist."
+    },
+    {
+      "id": 18,
+      "type": "stat",
+      "title": "winola: Begründung",
+      "gridPos": {
+        "h": 6,
+        "w": 2,
+        "x": 4,
+        "y": 7
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/"
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "compute:winola:latest",
+          "field": "reason"
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "type": "stat",
+      "title": "gamer: Soll-Zustand",
+      "gridPos": {
+        "h": 6,
+        "w": 2,
+        "x": 6,
+        "y": 7
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "EIN",
+                  "color": "green",
+                  "index": 0
+                },
+                "0": {
+                  "text": "AUS",
+                  "color": "text",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/"
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "compute:gamer:latest",
+          "field": "desired"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "type": "stat",
+      "title": "gamer: Aktor",
+      "gridPos": {
+        "h": 6,
+        "w": 2,
+        "x": 8,
+        "y": 7
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "geschaltet",
+                  "color": "orange",
+                  "index": 0
+                },
+                "0": {
+                  "text": "Probelauf",
+                  "color": "text",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/"
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "compute:gamer:latest",
+          "field": "actuated"
+        }
+      ],
+      "description": "Ob dieses Gerät gerade wirklich geschaltet wird (COMPUTE_MODE=live und Art \"tuya\") oder nur Probelauf ist."
+    },
+    {
+      "id": 21,
+      "type": "stat",
+      "title": "gamer: Begründung",
+      "gridPos": {
+        "h": 6,
+        "w": 2,
+        "x": 10,
+        "y": 7
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/"
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "compute:gamer:latest",
+          "field": "reason"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "type": "stat",
+      "title": "imac: Soll-Zustand",
+      "gridPos": {
+        "h": 6,
+        "w": 2,
+        "x": 12,
+        "y": 7
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "EIN",
+                  "color": "green",
+                  "index": 0
+                },
+                "0": {
+                  "text": "AUS",
+                  "color": "text",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/"
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "compute:imac:latest",
+          "field": "desired"
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "type": "stat",
+      "title": "imac: Aktor",
+      "gridPos": {
+        "h": 6,
+        "w": 2,
+        "x": 14,
+        "y": 7
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "geschaltet",
+                  "color": "orange",
+                  "index": 0
+                },
+                "0": {
+                  "text": "Probelauf",
+                  "color": "text",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/"
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "compute:imac:latest",
+          "field": "actuated"
+        }
+      ],
+      "description": "Ob dieses Gerät gerade wirklich geschaltet wird (COMPUTE_MODE=live und Art \"tuya\") oder nur Probelauf ist."
+    },
+    {
+      "id": 24,
+      "type": "stat",
+      "title": "imac: Begründung",
+      "gridPos": {
+        "h": 6,
+        "w": 2,
+        "x": 16,
+        "y": 7
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/"
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "compute:imac:latest",
+          "field": "reason"
+        }
+      ]
+    },
+    {
+      "id": 25,
+      "type": "stat",
+      "title": "dehumidifier: Soll-Zustand",
+      "gridPos": {
+        "h": 6,
+        "w": 2,
+        "x": 18,
+        "y": 7
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "EIN",
+                  "color": "green",
+                  "index": 0
+                },
+                "0": {
+                  "text": "AUS",
+                  "color": "text",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/"
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "compute:dehumidifier:latest",
+          "field": "desired"
+        }
+      ]
+    },
+    {
+      "id": 26,
+      "type": "stat",
+      "title": "dehumidifier: Aktor",
+      "gridPos": {
+        "h": 6,
+        "w": 2,
+        "x": 20,
+        "y": 7
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "geschaltet",
+                  "color": "orange",
+                  "index": 0
+                },
+                "0": {
+                  "text": "Probelauf",
+                  "color": "text",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/"
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "compute:dehumidifier:latest",
+          "field": "actuated"
+        }
+      ],
+      "description": "Ob dieses Gerät gerade wirklich geschaltet wird (COMPUTE_MODE=live und Art \"tuya\") oder nur Probelauf ist."
+    },
+    {
+      "id": 27,
+      "type": "stat",
+      "title": "dehumidifier: Begründung",
+      "gridPos": {
+        "h": 6,
+        "w": 2,
+        "x": 22,
+        "y": 7
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/"
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "compute:dehumidifier:latest",
+          "field": "reason"
+        }
+      ]
+    },
+    {
+      "id": 28,
+      "type": "table",
+      "title": "Entfeuchter: Rohdaten (Tuya DPS)",
+      "description": "Unbearbeitete Datenpunkte des Tuya-Geräts (siehe TUYA_DEHUMIDIFIER_* in .env / README). Dient nur dazu, die Bedeutung der einzelnen dps_<n>-Felder am echten Gerät zu bestimmen; sobald bekannt, bekommen Luftfeuchtigkeit & Co. eigene, beschriftete Panels.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 38
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "cli",
+          "query": "hgetall tuya:dehumidifier:latest"
+        }
+      ]
+    },
+    {
+      "id": 29,
+      "type": "stat",
+      "title": "Entfeuchter: zuletzt erreicht",
+      "description": "Zeitpunkt der letzten erfolgreichen Abfrage des Tuya-Geräts.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 38
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "dateTimeFromNow",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/"
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "tuya:dehumidifier:latest",
+          "field": "updated_at"
         }
       ]
     }

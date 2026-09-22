@@ -1,8 +1,17 @@
 """Decides when the compute machines (PrimeGrid) should run, from the PV surplus and a forecast.
 
-DRY RUN ONLY for now: the controller computes and records what it *would* switch, but nothing is
-switched. Actuation (Shelly plugs, shutdown over SSH) comes later; until then this shows whether
-the rules make sense.
+One shared priority queue decides, cumulatively, which controllable loads get to run on PV
+surplus -- the order of COMPUTE_MACHINES *is* the priority: the load listed first gets first claim
+on the surplus, the next one only gets what's left, and so on, all the way down. Two loads can't
+independently think they each have the same surplus available, because there is only one queue.
+
+Two kinds of load, per machine ("name:watts" or "name:watts:kind" in COMPUTE_MACHINES):
+  - "pc" (default): a PC to run PrimeGrid on. DRY RUN ONLY for now -- the controller records what
+    it *would* switch, but doesn't (shutdown over SSH + a Shelly plug come later).
+  - "tuya": a local, cloud-free Tuya device (e.g. a dehumidifier) switched for real over the LAN
+    (see tuya_client.py and the README for how to get its id/local_key). Guarded by COMPUTE_MODE:
+    "dryrun" (default) never actuates anything, even a "tuya" machine; "live" actually switches
+    tuya machines (pc machines stay dry-run regardless, since their actuation isn't built yet).
 
 Every cycle it works out
   - headroom: PV production minus house consumption *without* the compute machines (15-minute
@@ -20,9 +29,11 @@ and then decides per machine, in priority order (the order of COMPUTE_MACHINES):
 
 Reads:  ts:inverter:power_pv_total, ts:hoymiles:*:power_w, ts:inverter:house_consumption_total,
         solaredge:battery:battery1:latest (soe), Open-Meteo hourly irradiance
-Writes: compute:latest, compute:<machine>:latest, compute:<machine>:state, compute:events (list),
-        ts:compute:headroom_w, ts:compute:forecast_headroom_w, ts:compute:<machine>:desired,
-        ts:compute:<machine>:threshold_on_w
+Writes: compute:latest, compute:<machine>:latest (also feeds machine_power() back into next
+        cycle's headroom, whether measured by a Shelly or, for now, estimated from the decision),
+        compute:<machine>:state, compute:events (list), tuya:<machine>:latest (raw device
+        telemetry, "tuya" machines only), ts:compute:headroom_w, ts:compute:forecast_headroom_w,
+        ts:compute:<machine>:desired, ts:compute:<machine>:threshold_on_w
 """
 
 import logging
@@ -38,6 +49,8 @@ from zoneinfo import ZoneInfo
 import redis
 import requests
 
+from tuya_client import TuyaDevice, TuyaDeviceError
+
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("compute-controller")
 
@@ -51,6 +64,8 @@ HOUR_S = 3600
 class Machine:
     name: str
     watts: float
+    kind: str = "pc"           # "pc" (dry run only) or "tuya" (really switched, see module docstring)
+    tuya_dps_switch: str = "1"  # DPS id of the on/off switch (almost always "1", but verify)
 
 
 @dataclass
@@ -71,14 +86,17 @@ class Params:
     w_per_wm2: float = 10.0         # fallback conversion irradiance -> PV power (learned if enough data)
 
 
-def parse_machines(spec: str) -> list:
+def parse_machines(spec: str, env=os.environ) -> list:
     machines = []
     for entry in spec.split(","):
         entry = entry.strip()
         if not entry:
             continue
-        name, _, watts = entry.partition(":")
-        machines.append(Machine(name.strip(), float(watts)))
+        parts = entry.split(":")
+        name, watts = parts[0].strip(), float(parts[1])
+        kind = parts[2].strip() if len(parts) > 2 else "pc"
+        dps_switch = env.get(f"TUYA_{name.upper()}_DPS_SWITCH", "1")
+        machines.append(Machine(name, watts, kind, dps_switch))
     return machines
 
 
@@ -86,7 +104,7 @@ def params_from_env(env=os.environ) -> Params:
     def f(key, default):
         return float(env.get(key, default))
     return Params(
-        machines=parse_machines(env.get("COMPUTE_MACHINES", "")),
+        machines=parse_machines(env.get("COMPUTE_MACHINES", ""), env),
         mode=env.get("COMPUTE_MODE", "dryrun"),
         interval_s=f("COMPUTE_INTERVAL", 60),
         smooth_min=f("COMPUTE_SMOOTH_MIN", 15),
@@ -260,6 +278,67 @@ def hoymiles_keys(r):
     return keys
 
 
+def build_tuya_devices(machines: list, env=os.environ) -> dict:
+    """One TuyaDevice per "tuya"-kind machine, from TUYA_<NAME>_ID/KEY/IP/VERSION. A machine
+    missing its id/key is skipped (logged once) rather than raising, so a typo in one device's
+    config doesn't take the whole controller down."""
+    devices = {}
+    for m in machines:
+        if m.kind != "tuya":
+            continue
+        prefix = f"TUYA_{m.name.upper()}_"
+        device_id, local_key = env.get(prefix + "ID"), env.get(prefix + "KEY")
+        if not device_id or not local_key:
+            log.error("%s is a tuya machine but %sID/%sKEY are not set -- leaving it out", m.name, prefix, prefix)
+            continue
+        devices[m.name] = TuyaDevice(m.name, device_id, local_key, env.get(prefix + "IP"), env.get(prefix + "VERSION", "3.3"))
+    return devices
+
+
+def tuya_target_state(desired_on: bool, polled_on: bool | None) -> bool:
+    """Whether the switch command should be (re-)sent: on an actual change, or to correct drift
+    from a manual toggle (e.g. someone used the Tuya app) or a command that didn't take effect --
+    the just-polled state disagrees with what we intend."""
+    return polled_on is None or polled_on != desired_on
+
+
+def poll_and_actuate_tuya(r, dev: TuyaDevice, machine, want_on: bool, live: bool, now_ms: int) -> float | None:
+    """Reads the device's telemetry (written to tuya:<name>:latest / its time series), and in
+    live mode sends the switch command when needed (see tuya_target_state). Returns the machine's
+    power draw to feed back into next cycle's headroom (measured if the device reports it, else
+    the configured wattage while on, 0 while off) -- or None if the device couldn't be reached.
+    """
+    try:
+        dps = dev.status()
+    except (TuyaDeviceError, OSError) as exc:
+        log.warning("%s: could not read the device (%s)", machine.name, exc)
+        return None
+
+    polled_on = dps.get(machine.tuya_dps_switch)
+    polled_on = bool(polled_on) if isinstance(polled_on, bool) else None
+    if live and tuya_target_state(want_on, polled_on):
+        try:
+            dev.set_switch(machine.tuya_dps_switch, want_on)
+            log.info("%s: sent switch %s", machine.name, "on" if want_on else "off")
+        except (TuyaDeviceError, OSError) as exc:
+            log.warning("%s: could not send the switch command (%s)", machine.name, exc)
+
+    pipe = r.pipeline(transaction=False)
+    mapping = {f"dps_{k}": str(v) for k, v in dps.items()}
+    mapping["updated_at"] = str(now_ms)
+    pipe.delete(f"tuya:{machine.name}:latest")
+    pipe.hset(f"tuya:{machine.name}:latest", mapping=mapping)
+    for k, v in dps.items():
+        if isinstance(v, bool) or not isinstance(v, (int, float)):
+            continue
+        pipe.ts().add(f"ts:tuya:{machine.name}:dps_{k}", now_ms, float(v), retention_msecs=RETENTION_MS,
+                      labels={"device": machine.name, "field": f"dps_{k}"}, duplicate_policy="last")
+    pipe.execute()
+
+    effective_on = want_on if live else bool(polled_on)
+    return machine.watts if effective_on else 0.0
+
+
 def machine_power(r, machine, now_ms):
     """Measured power of a machine (from the Shelly plug, once there is one); None while unknown."""
     h = r.hgetall(f"compute:{machine.name}:latest")
@@ -336,7 +415,7 @@ def handle_signal(signum, _frame):
     running = False
 
 
-def cycle(r, params, forecast, tz, learned, now_ms):
+def cycle(r, params, forecast, tz, learned, now_ms, tuya_devices=None):
     now_s = now_ms / 1000
     # production: SolarEdge + all Hoymiles inverters; every part must be known
     parts = [ts_mean(r, PV_KEYS_SOLAREDGE, now_ms, params.smooth_min)]
@@ -384,7 +463,7 @@ def cycle(r, params, forecast, tz, learned, now_ms):
         return "" if v is None else f"{v:.{digits}f}"
 
     latest = {
-        "mode": "dryrun", "complete": int(complete), "power_known": int(power_known),
+        "mode": params.mode, "complete": int(complete), "power_known": int(power_known),
         "production_w": fmt(pv), "house_w": fmt(house), "machines_w": fmt(machines_w),
         "headroom_w": fmt(headroom), "forecast_headroom_w": fmt(forecast_headroom),
         "forecast_pv_w": fmt(pv_forecast), "forecast_irradiance_next": fmt(f_next), "forecast_irradiance_last": fmt(f_ref),
@@ -397,21 +476,36 @@ def cycle(r, params, forecast, tz, learned, now_ms):
     if forecast_headroom is not None:
         add("ts:compute:forecast_headroom_w", forecast_headroom)
 
+    live = params.mode == "live"
     for d in decisions:
         name = d.machine.name
+        is_tuya = bool(d.machine.kind == "tuya" and tuya_devices and name in tuya_devices)
+        actuated = is_tuya and live
         if d.changed:
             pipe.hset(f"compute:{name}:state", mapping={"on": int(d.on), "since_ms": now_ms, "pending_ms": 0})
             stamp = datetime.fromtimestamp(now_s, tz).strftime("%d.%m. %H:%M")
-            line = f"{stamp}  {name}: {'EIN' if d.on else 'AUS'} (Probelauf, nicht geschaltet) – {d.reason}"
+            note = "geschaltet" if actuated else ("Probelauf, kein Aktor" if not is_tuya else "Probelauf, nicht geschaltet")
+            line = f"{stamp}  {name}: {'EIN' if d.on else 'AUS'} ({note}) – {d.reason}"
             pipe.lpush("compute:events", line)
             pipe.ltrim("compute:events", 0, 199)
             log.info(line)
         else:
             pipe.hset(f"compute:{name}:state", mapping={
                 "on": int(d.on), "since_ms": states[name].since_ms, "pending_ms": d.pending_ms})
-        pipe.hset(f"compute:{name}:latest", mapping={
+
+        # For a live tuya machine this also sends the switch command and returns its real (or
+        # estimated) power, which feeds back into next cycle's headroom via machine_power().
+        power_w = None
+        if is_tuya:
+            power_w = poll_and_actuate_tuya(r, tuya_devices[name], d.machine, d.on, live, now_ms)
+        machine_fields = {
             "desired": int(d.on), "reason": d.reason, "watts": d.machine.watts,
-            "threshold_on_w": d.threshold_on_w, "decided_at": now_ms})
+            "threshold_on_w": d.threshold_on_w, "decided_at": now_ms, "actuated": int(actuated),
+        }
+        if power_w is not None:
+            machine_fields["power_w"] = power_w
+            machine_fields["power_updated_at"] = now_ms
+        pipe.hset(f"compute:{name}:latest", mapping=machine_fields)
         add(f"ts:compute:{name}:desired", int(d.on))
         add(f"ts:compute:{name}:threshold_on_w", d.threshold_on_w)
     pipe.execute()
@@ -423,15 +517,11 @@ RETENTION_MS = int(os.environ.get("TS_RETENTION_DAYS", "365")) * 24 * 3600 * 100
 
 def main():
     params = params_from_env()
-    if params.mode != "dryrun":
-        log.error("COMPUTE_MODE=%s: switching machines is not implemented yet, staying in dry run", params.mode)
-    if not params.machines:
-        log.info("COMPUTE_MACHINES is empty -- no machines configured, idling")
-        signal.signal(signal.SIGTERM, handle_signal)
-        signal.signal(signal.SIGINT, handle_signal)
-        while running:
-            time.sleep(1)
-        return
+    if params.mode not in ("dryrun", "live"):
+        log.warning("Unknown COMPUTE_MODE=%s, treating as dryrun", params.mode)
+        params.mode = "dryrun"
+    signal.signal(signal.SIGTERM, handle_signal)
+    signal.signal(signal.SIGINT, handle_signal)
 
     r = redis.Redis(host=os.environ.get("REDIS_HOST", "redis"), port=int(os.environ.get("REDIS_PORT", "6379")),
                     password=os.environ.get("REDIS_PASSWORD") or None, decode_responses=True)
@@ -440,10 +530,17 @@ def main():
     lon = float(os.environ["LON"]) if os.environ.get("LON") else None
     tz = ZoneInfo(os.environ.get("TIMEZONE", "UTC"))
     forecast = Forecast(lat, lon)
-    signal.signal(signal.SIGTERM, handle_signal)
-    signal.signal(signal.SIGINT, handle_signal)
-    log.info("Dry run with %d machine(s): %s", len(params.machines),
-             ", ".join(f"{m.name} {m.watts:.0f} W" for m in params.machines))
+    tuya_devices = build_tuya_devices(params.machines)
+
+    if not params.machines:
+        log.info("COMPUTE_MACHINES is empty -- no controllable loads configured, just publishing the PV surplus")
+    else:
+        log.info("Mode=%s with %d machine(s): %s", params.mode, len(params.machines),
+                 ", ".join(f"{m.name} {m.watts:.0f} W ({m.kind})" for m in params.machines))
+        for m in params.machines:
+            if m.kind == "tuya" and m.name not in tuya_devices:
+                log.error("%s: tuya machine without a working device config -- see the error above; "
+                         "it will only ever be decided, never actuated, until that's fixed", m.name)
 
     learned, learned_at = params.w_per_wm2, 0.0
     while running:
@@ -455,7 +552,7 @@ def main():
                 learned_at = started
                 log.info("Irradiance -> power fallback: %.1f W per W/m² (%s)", learned,
                          f"learned from {samples} samples" if samples else "default, too little data")
-            cycle(r, params, forecast, tz, learned, now_ms)
+            cycle(r, params, forecast, tz, learned, now_ms, tuya_devices)
         except Exception:
             log.exception("Cycle failed")
         time.sleep(max(0.0, params.interval_s - (time.monotonic() - started)))
@@ -556,6 +653,16 @@ def selftest():
 
     # --- config
     check("Rechner-Konfiguration", [(m.name, m.watts) for m in parse_machines("winola:200, gamer:250")] == [("winola", 200), ("gamer", 250)])
+    check("Geräteart Standard ist pc", parse_machines("winola:200")[0].kind == "pc")
+    ms = parse_machines("dehumidifier:900:tuya", {"TUYA_DEHUMIDIFIER_DPS_SWITCH": "3"})
+    check("Geräteart tuya mit DPS-Override", ms[0].kind == "tuya" and ms[0].tuya_dps_switch == "3")
+    check("Tuya-DPS-Schalter ohne Override auf 1", parse_machines("dehumidifier:900:tuya")[0].tuya_dps_switch == "1")
+
+    # --- tuya actuation: (re-)send the command on a change or when reality disagrees, not otherwise
+    check("Zustand wechselt: senden", tuya_target_state(True, False))
+    check("gewünschter Zustand liegt schon an: nicht senden", not tuya_target_state(True, True))
+    check("kein bekannter Ist-Zustand: senden (zur Sicherheit)", tuya_target_state(False, None))
+    check("manuell umgeschaltet (Drift): erneut senden", tuya_target_state(True, False))
 
     print("Alle Tests bestanden" if failures == 0 else f"{failures} Test(s) fehlgeschlagen")
     return failures == 0

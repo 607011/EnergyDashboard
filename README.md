@@ -524,15 +524,54 @@ the View menu, Cmd-T) keeps the window above all others, including across Spaces
   `PVMonitor --print` fetches once and prints the figures, `PVMonitor --snapshot out.png [red]`
   renders the window with sample data to a PNG.
 
-## Compute machines on PV surplus (PrimeGrid)
+## Load management on PV surplus (`compute-controller`)
 
-`compute-controller` decides when machines that run PrimeGrid should be on, so that they compute
-on solar surplus and don't draw from the battery. **Dry run only for now:** it records what it
-*would* switch (`compute:events`, dashboard **Rechner-Steuerung (Probelauf)**); nothing is switched
-until the actuation part (Shelly plugs, shutdown over SSH) exists. Configure the machines in `.env`
-as `COMPUTE_MACHINES=winola:200,gamer:250,imac:100` (`name:watts` under full load, in priority
-order: the first is started first and stopped last). The watts are estimates until the plugs
-measure them. Without `COMPUTE_MACHINES` the service idles.
+One shared, priority-ordered list of controllable loads decides who gets to run on PV surplus.
+The order of `COMPUTE_MACHINES` *is* the priority: whoever is listed first gets first claim on the
+surplus, the next one only gets what's left over, and so on -- there is only one queue, so two
+loads can never both think they have the same surplus available. Configure it in `.env` as
+`COMPUTE_MACHINES=name:watts[:kind],...` (`watts` = consumption under full load; an estimate until
+a load is actually measured). Without `COMPUTE_MACHINES` the service still runs, just to publish
+the PV surplus for anything else that wants to read it (see below), deciding nothing.
+
+Two kinds of load:
+
+- **`pc`** (default, no `:kind` needed): a PC to run PrimeGrid on. **Dry run only for now** -- it
+  records what it *would* switch (`compute:events`, dashboard **Lastmanagement (PV-Überschuss)**);
+  nothing is actually switched until shutdown-over-SSH + a Shelly plug exist for it.
+- **`tuya`**: a local, cloud-free Tuya device (e.g. a dehumidifier) switched for real over the LAN,
+  via [tinytuya](https://github.com/jasonacox/tinytuya) -- no ongoing cloud dependency, but its
+  `local_key` has to be read out once (see below). Guarded by `COMPUTE_MODE`: `dryrun` (default)
+  never actuates *anything*, even a `tuya` machine; `live` actually switches `tuya` machines (`pc`
+  machines stay dry-run regardless). A `tuya` machine's own consumption (measured, if it reports
+  power, else the configured watts while its switch is on) feeds back into the next cycle's
+  headroom automatically, the same way a `pc` machine's Shelly reading will once that exists.
+
+**Setting up a `tuya` machine:** add it to `COMPUTE_MACHINES` as `name:watts:tuya`, then set
+`TUYA_<NAME>_ID` and `TUYA_<NAME>_KEY` in `.env` (`<NAME>` = the machine's name, upper-cased), and
+optionally `TUYA_<NAME>_IP` (skips LAN broadcast discovery, faster startup) and
+`TUYA_<NAME>_DPS_SWITCH` (which DPS number is the power switch; default `"1"`, true for most
+devices). The tricky part is the `local_key`, which is device-specific and not on a label anywhere:
+
+1. Create a free account and a "Cloud" project on the [Tuya IoT
+   Platform](https://iot.tuya.com/), and link the Tuya Smart / Smart Life app account the device
+   is on to it (the project's "Devices" tab has a "Link Tuya App Account" step).
+2. Read out the id and `local_key` either from that project's Devices tab (*Device Information* --
+   the **Local Key** field is exactly 16 characters; don't confuse it with the *project's* Client
+   ID/Client Secret, which are longer and won't work here), or run tinytuya's own wizard for every
+   device on the account at once: `docker compose run --rm --no-deps compute-controller python -m
+   tinytuya wizard` (needs the project's Access ID/Access Secret when it asks).
+3. The controller logs the device's raw data points (`dps_<n>`) the first time it reads it
+   successfully -- use that to confirm `TUYA_<NAME>_DPS_SWITCH` and to find other fields worth
+   giving their own dashboard panel (temperature, humidity, ...); until then they show up as-is in
+   the dashboard's raw-DPS table.
+
+A Matter device does not work this way: Matter has no direct local API of its own to poll like
+this, it needs an actual Matter controller (Home Assistant, Apple/Google/Amazon's own hub
+software, or a standalone one like [python-matter-server](https://github.com/home-assistant-libs/python-matter-server))
+regardless of what "no hub required" packaging claims (that line means no vendor-specific hub, not
+no software controller at all) -- a much bigger addition than tinytuya's plain LAN calls, and not
+what `compute-controller` is set up for.
 
 Every minute it works out the **headroom** (production of all three PV systems minus house
 consumption *without* the machines, 15-minute means: what would otherwise be exported or charge the

@@ -92,6 +92,11 @@ services:
     restart: unless-stopped
     depends_on:
       - redis
+    # TUYA_<NAME>_ID/KEY/IP/VERSION/DPS_SWITCH are named after each "tuya"-kind entry in
+    # COMPUTE_MACHINES, so they can't be listed individually below like the fixed COMPUTE_*
+    # settings -- env_file passes the whole .env through, which picks up any of them.
+    env_file:
+      - .env
     environment:
       # "name:watts,name:watts" in priority order (first is started first, stopped last).
       # Leave empty if you have no such machines: the controller then idles.
