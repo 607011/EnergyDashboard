@@ -360,14 +360,26 @@ def hoymiles_power(r: redis.Redis, now_ms: int, is_night: bool) -> float | None:
     reporting, which is indistinguishable from an outage by staleness alone -- but at night they
     are certainly producing 0 W, so known sun position resolves the ambiguity and keeps
     house_consumption_total from going dark for hours every night.
+
+    Overnight, hoymiles-poller's own staleness handling (see its sweep_stale) deletes each
+    per-inverter hash after HOYMILES_STALE_AFTER_SECONDS of failed reads -- normal, since their
+    "burst" endpoint stops answering once they're fully powered down, well before the station-level
+    poll (which keeps working) goes stale too. So "a Hoymiles system exists" is decided from *any*
+    hoymiles:*:latest hash still being present, not specifically a per-inverter one, or this would
+    (and did) start reporting "unknown" again every night as soon as those get cleared.
     """
     total = None
     any_hoymiles = False
     for key in r.scan_iter(match="hoymiles:*:latest"):
         h = r.hgetall(key)
-        if "p1_w" not in h:
+        if not h:
             continue
+        # Any hash at all (station or per-inverter) counts as "there is a Hoymiles system" --
+        # the per-inverter ones are exactly what can vanish overnight (see below), so proving a
+        # system exists must not depend on one of those specifically still being present.
         any_hoymiles = True
+        if "p1_w" not in h:
+            continue  # station-level hash: skip for the sum itself, it would double count
         try:
             fresh = now_ms - int(h["updated_at"]) <= HOYMILES_MAX_AGE * 1000
             power = float(h.get("power_w") or 0)
