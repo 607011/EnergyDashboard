@@ -6,12 +6,15 @@ on the surplus, the next one only gets what's left, and so on, all the way down.
 independently think they each have the same surplus available, because there is only one queue.
 
 Two kinds of load, per machine ("name:watts" or "name:watts:kind" in COMPUTE_MACHINES):
-  - "pc" (default): a PC to run PrimeGrid on. DRY RUN ONLY for now -- the controller records what
-    it *would* switch, but doesn't (shutdown over SSH + a Shelly plug come later).
+  - "pc" (default): a PC to run PrimeGrid on. Dry run unless PC_<NAME>_ACTUATOR is set (see
+    pc_actuator.py's module docstring for the two methods, "shelly" and "wol", and their exact
+    on/off sequencing); a machine without it configured just gets decided, never actuated.
   - "tuya": a local, cloud-free Tuya device (e.g. a dehumidifier) switched for real over the LAN
-    (see tuya_client.py and the README for how to get its id/local_key). Guarded by COMPUTE_MODE:
-    "dryrun" (default) never actuates anything, even a "tuya" machine; "live" actually switches
-    tuya machines (pc machines stay dry-run regardless, since their actuation isn't built yet).
+    (see tuya_client.py and the README for how to get its id/local_key).
+
+Either kind's real actuation is additionally guarded by COMPUTE_MODE: "dryrun" (default) never
+actuates anything; "live" actuates every machine that has its actuator configured (a "pc" without
+PC_<NAME>_ACTUATOR, or a "tuya" without a working device config, stays dry-run regardless).
 
 Every cycle it works out
   - headroom: PV production minus house consumption *without* the compute machines (15-minute
@@ -50,6 +53,7 @@ import redis
 import requests
 
 from tuya_client import TuyaDevice, TuyaDeviceError
+import pc_actuator
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("compute-controller")
@@ -64,8 +68,15 @@ HOUR_S = 3600
 class Machine:
     name: str
     watts: float
-    kind: str = "pc"           # "pc" (dry run only) or "tuya" (really switched, see module docstring)
+    kind: str = "pc"           # "pc" or "tuya" (really switched, see module docstring)
     tuya_dps_switch: str = "1"  # DPS id of the on/off switch (almost always "1", but verify)
+    # "pc" real actuation, opt-in per machine (PC_<NAME>_*, see module docstring); None = dry run.
+    pc_actuator_kind: str | None = None  # "shelly" (Windows: SSH shutdown + cut the plug) or
+                                         # "wol" (e.g. a Mac that won't reboot on power restore:
+                                         # SSH sleep + Wake-on-LAN, its plug is never touched)
+    pc_ssh_host: str | None = None
+    pc_ssh_user: str | None = None
+    pc_mac: str | None = None
 
 
 @dataclass
@@ -84,6 +95,19 @@ class Params:
     soc_min: float = 40.0           # below this, stop immediately
     soc_fc_off: float = 95.0        # a bad forecast only stops machines while the battery is below this
     w_per_wm2: float = 10.0         # fallback conversion irradiance -> PV power (learned if enough data)
+    pc_ssh_key: str = "/run/secrets/pc_ssh_key"  # private key for "pc" actuation over SSH
+    shelly_hosts: dict = None  # name -> host, from SHELLY_DEVICES (for the "shelly" pc actuator)
+
+
+def parse_shelly_hosts(spec: str) -> dict:
+    hosts = {}
+    for entry in spec.split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        name, _, host = entry.partition(":")
+        hosts[name.strip()] = host.strip()
+    return hosts
 
 
 def parse_machines(spec: str, env=os.environ) -> list:
@@ -95,8 +119,15 @@ def parse_machines(spec: str, env=os.environ) -> list:
         parts = entry.split(":")
         name, watts = parts[0].strip(), float(parts[1])
         kind = parts[2].strip() if len(parts) > 2 else "pc"
-        dps_switch = env.get(f"TUYA_{name.upper()}_DPS_SWITCH", "1")
-        machines.append(Machine(name, watts, kind, dps_switch))
+        prefix = f"PC_{name.upper()}_"
+        machines.append(Machine(
+            name, watts, kind,
+            tuya_dps_switch=env.get(f"TUYA_{name.upper()}_DPS_SWITCH", "1"),
+            pc_actuator_kind=env.get(prefix + "ACTUATOR") or None,
+            pc_ssh_host=env.get(prefix + "SSH_HOST"),
+            pc_ssh_user=env.get(prefix + "SSH_USER"),
+            pc_mac=env.get(prefix + "MAC"),
+        ))
     return machines
 
 
@@ -118,6 +149,8 @@ def params_from_env(env=os.environ) -> Params:
         soc_min=f("COMPUTE_SOC_MIN", 40),
         soc_fc_off=f("COMPUTE_SOC_FC_OFF", 95),
         w_per_wm2=f("COMPUTE_W_PER_WM2", 10),
+        pc_ssh_key=env.get("PC_SSH_KEY_PATH", "/run/secrets/pc_ssh_key"),
+        shelly_hosts=parse_shelly_hosts(env.get("SHELLY_DEVICES", "")),
     )
 
 
@@ -339,6 +372,61 @@ def poll_and_actuate_tuya(r, dev: TuyaDevice, machine, want_on: bool, live: bool
     return machine.watts if effective_on else 0.0
 
 
+def actuate_pc(r: redis.Redis, params: "Params", machine: Machine, want_on: bool, live: bool) -> bool:
+    """Runs the SSH/Shelly/WoL actions for a "pc" machine with an actuator configured (see
+    pc_actuator.py); does nothing if PC_<NAME>_ACTUATOR isn't set (stays dry-run). Returns whether
+    a shutdown has been sent and is still being waited out (persisted as machine_fields["shutdown_sent"]
+    by the caller, and fed back in as the current `shutdown_sent` on the next cycle).
+    """
+    if not machine.pc_actuator_kind:
+        return False
+    plug = r.hgetall(f"shelly:{machine.name}:latest")
+    try:
+        plug_fresh = plug and (int(r.hget(f"shelly:{machine.name}:latest", "updated_at") or 0))
+    except (TypeError, ValueError):
+        plug_fresh = False
+    plug_on = plug.get("on") == "True" if plug else None
+    try:
+        power_w = float(plug["power_w"]) if plug.get("power_w") not in (None, "") else None
+    except ValueError:
+        power_w = None
+    shutdown_sent = r.hget(f"compute:{machine.name}:latest", "shutdown_sent") == "1"
+
+    if machine.pc_actuator_kind == "shelly":
+        actions = pc_actuator.shelly_pc_actions(want_on, plug_on, power_w, shutdown_sent)
+    elif machine.pc_actuator_kind == "wol":
+        actions = pc_actuator.wol_pc_actions(want_on, power_w)
+    else:
+        log.error("%s: unknown PC_%s_ACTUATOR=%r", machine.name, machine.name.upper(), machine.pc_actuator_kind)
+        return shutdown_sent
+
+    if not actions or not live:
+        if actions and not live:
+            log.info("%s: would %s (dry run, COMPUTE_MODE != live)", machine.name, ", ".join(actions))
+        return shutdown_sent
+
+    plug_host = params.shelly_hosts.get(machine.name)
+    for action in actions:
+        try:
+            if action in ("shelly_on", "shelly_off"):
+                if not plug_host:
+                    raise pc_actuator.ActuationError(f"no SHELLY_DEVICES entry named {machine.name!r}")
+                pc_actuator.shelly_set_switch(plug_host, action == "shelly_on")
+            elif action == "ssh_shutdown":
+                pc_actuator.ssh_run(machine.pc_ssh_host, machine.pc_ssh_user, params.pc_ssh_key, "shutdown /s /t 0")
+                shutdown_sent = True
+            elif action == "ssh_sleep":
+                pc_actuator.ssh_run(machine.pc_ssh_host, machine.pc_ssh_user, params.pc_ssh_key, "pmset sleepnow")
+            elif action == "wol":
+                pc_actuator.send_wol(machine.pc_mac)
+            log.info("%s: %s", machine.name, action)
+        except pc_actuator.ActuationError as exc:
+            log.warning("%s: %s failed (%s)", machine.name, action, exc)
+    if "shelly_off" in actions:
+        shutdown_sent = False
+    return shutdown_sent
+
+
 def machine_power(r, machine, now_ms):
     """Measured power of a machine (from the Shelly plug, once there is one); None while unknown."""
     h = r.hgetall(f"compute:{machine.name}:latest")
@@ -480,11 +568,12 @@ def cycle(r, params, forecast, tz, learned, now_ms, tuya_devices=None):
     for d in decisions:
         name = d.machine.name
         is_tuya = bool(d.machine.kind == "tuya" and tuya_devices and name in tuya_devices)
-        actuated = is_tuya and live
+        has_pc_actuator = d.machine.kind == "pc" and bool(d.machine.pc_actuator_kind)
+        actuated = (is_tuya or has_pc_actuator) and live
         if d.changed:
             pipe.hset(f"compute:{name}:state", mapping={"on": int(d.on), "since_ms": now_ms, "pending_ms": 0})
             stamp = datetime.fromtimestamp(now_s, tz).strftime("%d.%m. %H:%M")
-            note = "geschaltet" if actuated else ("Probelauf, kein Aktor" if not is_tuya else "Probelauf, nicht geschaltet")
+            note = "geschaltet" if actuated else ("Probelauf, kein Aktor" if not (is_tuya or has_pc_actuator) else "Probelauf, nicht geschaltet")
             line = f"{stamp}  {name}: {'EIN' if d.on else 'AUS'} ({note}) – {d.reason}"
             pipe.lpush("compute:events", line)
             pipe.ltrim("compute:events", 0, 199)
@@ -494,10 +583,15 @@ def cycle(r, params, forecast, tz, learned, now_ms, tuya_devices=None):
                 "on": int(d.on), "since_ms": states[name].since_ms, "pending_ms": d.pending_ms})
 
         # For a live tuya machine this also sends the switch command and returns its real (or
-        # estimated) power, which feeds back into next cycle's headroom via machine_power().
+        # estimated) power, which feeds back into next cycle's headroom via machine_power(); for a
+        # "pc" machine with an actuator this runs its SSH/Shelly/WoL steps (its power already
+        # feeds back on its own, via shelly-poller writing the same compute:<name>:latest fields).
         power_w = None
+        shutdown_sent = None
         if is_tuya:
             power_w = poll_and_actuate_tuya(r, tuya_devices[name], d.machine, d.on, live, now_ms)
+        elif has_pc_actuator:
+            shutdown_sent = actuate_pc(r, params, d.machine, d.on, live)
         machine_fields = {
             "desired": int(d.on), "reason": d.reason, "watts": d.machine.watts,
             "threshold_on_w": d.threshold_on_w, "decided_at": now_ms, "actuated": int(actuated),
@@ -505,6 +599,8 @@ def cycle(r, params, forecast, tz, learned, now_ms, tuya_devices=None):
         if power_w is not None:
             machine_fields["power_w"] = power_w
             machine_fields["power_updated_at"] = now_ms
+        if shutdown_sent is not None:
+            machine_fields["shutdown_sent"] = int(shutdown_sent)
         pipe.hset(f"compute:{name}:latest", mapping=machine_fields)
         add(f"ts:compute:{name}:desired", int(d.on))
         add(f"ts:compute:{name}:threshold_on_w", d.threshold_on_w)
@@ -657,6 +753,10 @@ def selftest():
     ms = parse_machines("dehumidifier:900:tuya", {"TUYA_DEHUMIDIFIER_DPS_SWITCH": "3"})
     check("Geräteart tuya mit DPS-Override", ms[0].kind == "tuya" and ms[0].tuya_dps_switch == "3")
     check("Tuya-DPS-Schalter ohne Override auf 1", parse_machines("dehumidifier:900:tuya")[0].tuya_dps_switch == "1")
+    check("Shelly-Hosts parsen", parse_shelly_hosts("gamer:192.168.0.162, winola:192.168.0.208") == {"gamer": "192.168.0.162", "winola": "192.168.0.208"})
+    ms = parse_machines("winola:200", {"PC_WINOLA_ACTUATOR": "shelly", "PC_WINOLA_SSH_HOST": "192.168.0.144", "PC_WINOLA_SSH_USER": "lands"})
+    check("PC-Aktor-Konfiguration geparst", ms[0].pc_actuator_kind == "shelly" and ms[0].pc_ssh_host == "192.168.0.144" and ms[0].pc_ssh_user == "lands")
+    check("ohne PC_*_ACTUATOR bleibt es Probelauf", parse_machines("winola:200")[0].pc_actuator_kind is None)
 
     # --- tuya actuation: (re-)send the command on a change or when reality disagrees, not otherwise
     check("Zustand wechselt: senden", tuya_target_state(True, False))

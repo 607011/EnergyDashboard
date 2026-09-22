@@ -2,3 +2,4 @@ redis==5.0.8
 requests==2.32.3
 tzdata==2025.2
 tinytuya==1.20.0
+paramiko==3.5.0

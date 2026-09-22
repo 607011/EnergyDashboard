@@ -548,16 +548,49 @@ estimate instead.
 
 Two kinds of load:
 
-- **`pc`** (default, no `:kind` needed): a PC to run PrimeGrid on. **Dry run only for now** -- it
-  records what it *would* switch (`compute:events`, dashboard **Lastmanagement (PV-Überschuss)**);
-  nothing is actually switched until shutdown-over-SSH + a Shelly plug exist for it.
+- **`pc`** (default, no `:kind` needed): a PC to run PrimeGrid on. Dry run unless
+  `PC_<NAME>_ACTUATOR` is set (see below) -- without it, the machine is just decided, never
+  actuated (`compute:events`, dashboard **Lastmanagement (PV-Überschuss)**).
 - **`tuya`**: a local, cloud-free Tuya device (e.g. a dehumidifier) switched for real over the LAN,
   via [tinytuya](https://github.com/jasonacox/tinytuya) -- no ongoing cloud dependency, but its
-  `local_key` has to be read out once (see below). Guarded by `COMPUTE_MODE`: `dryrun` (default)
-  never actuates *anything*, even a `tuya` machine; `live` actually switches `tuya` machines (`pc`
-  machines stay dry-run regardless). A `tuya` machine's own consumption (measured, if it reports
-  power, else the configured watts while its switch is on) feeds back into the next cycle's
-  headroom automatically, the same way a `pc` machine's Shelly reading will once that exists.
+  `local_key` has to be read out once (see below).
+
+Either kind's real actuation is additionally guarded by `COMPUTE_MODE`: `dryrun` (default) never
+actuates *anything*; `live` actuates every machine that has its actuator configured. A `tuya`
+machine's own consumption (measured, if it reports power, else the configured watts while its
+switch is on) feeds back into the next cycle's headroom automatically; a `pc` machine's does too,
+via its Shelly plug (see above) -- no separate wiring needed for either.
+
+**Setting up a `pc` machine's actuator (`pc_actuator.py`):** set `PC_<NAME>_ACTUATOR` to one of:
+
+- **`shelly`** -- for a PC whose BIOS/UEFI reliably powers back on when it gets AC power again
+  ("Restore on AC Power Loss" = Power On; verify this with a real power cut before relying on it).
+  Turning it off shuts Windows down over SSH (`shutdown /s /t 0`) and, once its Shelly plug's power
+  reading drops below `pc_actuator.POWER_THRESHOLD_W` (confirming it actually finished, not just
+  that the command was sent), cuts the plug; turning on just switches the plug back on. Needs
+  `PC_<NAME>_SSH_HOST` and `PC_<NAME>_SSH_USER` (a Windows account with OpenSSH Server enabled and
+  the controller's key in `administrators_authorized_keys` or `authorized_keys`, see below), and
+  that machine's own name present in `SHELLY_DEVICES`.
+- **`wol`** -- for a machine that doesn't reliably power on from a real power cut (some Macs don't;
+  see the project's notes on this). Its plug is **never switched** and must stay on permanently;
+  "off" is `pmset sleepnow` over SSH instead, "on" is a Wake-on-LAN packet to `PC_<NAME>_MAC`
+  (needs "Wake for network access" enabled and an Ethernet connection on that machine). Also needs
+  `PC_<NAME>_SSH_HOST`/`PC_<NAME>_SSH_USER`, and that machine's name in `SHELLY_DEVICES` purely so
+  its plug's power reading can tell awake from asleep.
+
+Both methods need a dedicated SSH keypair for the controller (separate from anyone's personal
+key), generated once and never checked into git:
+
+```bash
+ssh-keygen -t ed25519 -f compute-controller-ssh/id_ed25519 -N "" -C se10k-compute-controller
+```
+
+Add the resulting `.pub` to each managed machine's `authorized_keys` (Windows: see
+[Setup](#setup) above for OpenSSH Server and the `administrators_authorized_keys` path; macOS:
+enable *Remote Login* in Sharing settings, then append the key to `~/.ssh/authorized_keys` for that
+account). The private half is bind-mounted into the container from `compute-controller-ssh/` (see
+`docker-compose.yml`); `PC_SSH_KEY_PATH` points at it inside the container if the filename ever
+changes from the default.
 
 **Setting up a `tuya` machine:** add it to `COMPUTE_MACHINES` as `name:watts:tuya`, then set
 `TUYA_<NAME>_ID` and `TUYA_<NAME>_KEY` in `.env` (`<NAME>` = the machine's name, upper-cased).

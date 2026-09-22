@@ -7,7 +7,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 7,
+  "version": 8,
   "refresh": "1m",
   "graphTooltip": 2,
   "time": {
@@ -27,7 +27,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**Eine Prioritätsliste, mehrere Geräte:** `COMPUTE_MACHINES` legt die Reihenfolge fest, in der Geräte vom PV-Überschuss profitieren -- wer zuerst in der Liste steht, bekommt zuerst Überschuss zugeteilt. Rechner (Art `pc`) sind weiterhin **Probelauf**: es wird nur aufgezeichnet, was geschaltet würde. Ein Tuya-Gerät (Art `tuya`, z. B. der Entfeuchter) wird bei `COMPUTE_MODE=live` **wirklich geschaltet** -- die Spalte „Aktor“ zeigt je Gerät, ob gerade wirklich geschaltet wird oder nur Probelauf läuft. Die zugrunde gelegte Leistung ist eine Schätzung (Typenschild-Watt), bis eine Shelly-Steckdose sie misst."
+        "content": "**Eine Prioritätsliste, mehrere Geräte:** `COMPUTE_MACHINES` legt die Reihenfolge fest, in der Geräte vom PV-Überschuss profitieren -- wer zuerst in der Liste steht, bekommt zuerst Überschuss zugeteilt. Bei `COMPUTE_MODE=live` wird jedes Gerät mit eingerichtetem Aktor **wirklich geschaltet** (Tuya-Geräte über TUYA_*, Rechner über PC_*_ACTUATOR: `shelly` = SSH-Shutdown + Steckdose trennen, `wol` = SSH-Ruhezustand + Wake-on-LAN) -- ohne eingerichteten Aktor bleibt ein Gerät Probelauf. Die Spalte „Aktor“ zeigt je Gerät, ob gerade wirklich geschaltet wird oder nur Probelauf läuft. Die zugrunde gelegte Leistung ist eine Schätzung (Typenschild-Watt), bis eine Shelly-Steckdose sie misst."
       }
     },
     {

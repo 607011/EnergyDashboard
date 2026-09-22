@@ -137,6 +137,12 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Private key for real "pc" actuation (SSH shutdown/sleep, see pc_actuator.py). Generated on
+      # the Pi with `ssh-keygen -f compute-controller-ssh/id_ed25519` (never in git -- see
+      # .gitignore); its public half then goes into each managed PC's authorized_keys.
+      PC_SSH_KEY_PATH: /run/secrets/pc-ssh/id_ed25519
+    volumes:
+      - ./compute-controller-ssh:/run/secrets/pc-ssh:ro
 
   grafana:
     image: grafana/grafana:11.3.0
