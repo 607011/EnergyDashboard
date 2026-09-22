@@ -171,9 +171,19 @@ measured separately and can momentarily disagree (same issue as
 There is no way to read a genuine whole-house consumption figure over Modbus
 here: our SolarEdge meter is a single bidirectional grid meter
 (`Export+Import`), not a separate CT clamp on the main feed, so this
-subtraction is the only source for it (the SolarEdge app almost certainly
-computes it the same way, just without the Hoymiles part and its staleness
-issues).
+subtraction is the only source for it.
+
+The Hoymiles microinverters feed into the house wiring on the AC side, between
+the SolarEdge meter and the loads. The meter therefore never sees their output
+as generation; it only sees the *remaining* demand after that power has
+already been used. So the plain `house_consumption` (and the SolarEdge app's
+own "into house" figure, computed the same way, without knowing Hoymiles
+exists) isn't an approximation of the whole-house load with a term missing --
+it is structurally the *remaining* demand net of the Hoymiles supply, an
+unavoidable consequence of the wiring rather than anything the app could
+account for. `house_consumption_total` adds the Hoymiles power back in for
+exactly that reason: to undo what the wiring already subtracted and recover
+the actual whole-house consumption.
 
 ## Hoymiles microinverters
 
