@@ -560,23 +560,38 @@ Two kinds of load:
   headroom automatically, the same way a `pc` machine's Shelly reading will once that exists.
 
 **Setting up a `tuya` machine:** add it to `COMPUTE_MACHINES` as `name:watts:tuya`, then set
-`TUYA_<NAME>_ID` and `TUYA_<NAME>_KEY` in `.env` (`<NAME>` = the machine's name, upper-cased), and
-optionally `TUYA_<NAME>_IP` (skips LAN broadcast discovery, faster startup) and
-`TUYA_<NAME>_DPS_SWITCH` (which DPS number is the power switch; default `"1"`, true for most
-devices). The tricky part is the `local_key`, which is device-specific and not on a label anywhere:
+`TUYA_<NAME>_ID` and `TUYA_<NAME>_KEY` in `.env` (`<NAME>` = the machine's name, upper-cased).
+Optional: `TUYA_<NAME>_IP` (skips LAN broadcast discovery, faster startup), `TUYA_<NAME>_VERSION`
+(protocol version; default `"3.3"`, but plenty of newer devices need `"3.4"` or `"3.5"` -- see
+below), `TUYA_<NAME>_DPS_SWITCH` (which DPS number is the power switch; default `"1"`, true for
+most devices).
 
-1. Create a free account and a "Cloud" project on the [Tuya IoT
-   Platform](https://iot.tuya.com/), and link the Tuya Smart / Smart Life app account the device
-   is on to it (the project's "Devices" tab has a "Link Tuya App Account" step).
-2. Read out the id and `local_key` either from that project's Devices tab (*Device Information* --
-   the **Local Key** field is exactly 16 characters; don't confuse it with the *project's* Client
-   ID/Client Secret, which are longer and won't work here), or run tinytuya's own wizard for every
-   device on the account at once: `docker compose run --rm --no-deps compute-controller python -m
-   tinytuya wizard` (needs the project's Access ID/Access Secret when it asks).
-3. The controller logs the device's raw data points (`dps_<n>`) the first time it reads it
-   successfully -- use that to confirm `TUYA_<NAME>_DPS_SWITCH` and to find other fields worth
-   giving their own dashboard panel (temperature, humidity, ...); until then they show up as-is in
-   the dashboard's raw-DPS table.
+The tricky part is the `local_key`, which is device-specific, changes if the device is ever
+removed and re-added to the app, and isn't printed on the device or in its manual:
+
+1. Create a free account and a "Cloud" project (type **"Smart Home PaaS"** -- "Custom Development"
+   projects can't do the next step) on the [Tuya IoT Platform](https://iot.tuya.com/).
+2. In the project's **Devices** tab, **"Link Tuya App Account" -> "Add App Account"**, scan the QR
+   code with the **Smart Life app** (not a different Tuya app) and confirm. The device should then
+   appear in the list.
+3. Run tinytuya's own wizard, which reads out every linked device's id and `local_key` at once and
+   writes them to `devices.json`: `docker compose run --name tuya-wizard --no-deps
+   compute-controller python -m tinytuya wizard` (asks for the project's Access ID/Access Secret,
+   found on the project's Overview page), then `docker cp tuya-wizard:/app/devices.json .` before
+   removing the container (`--rm` would delete the file together with it). This is far more
+   reliable than reading the values off the Devices tab by hand -- its device list only shows a
+   `Device ID` column, easy to mistake for the key, and the actual **Local Key** field (in a
+   device's own detail view) has repeatedly turned out to be one click further than expected.
+4. If the controller logs `Check device key or version` or `Unexpected Payload from Device`, the
+   id/key are probably right but the protocol version isn't -- try `TUYA_<NAME>_VERSION` `3.1`
+   through `3.5` (our Aktobis WDH-870FW dehumidifier turned out to need `3.5`).
+5. Once it connects, the controller logs the device's raw data points (`dps_<n>`, also written to
+   `tuya:<name>:latest` / `ts:tuya:<name>:dps_<n>`) the first time it reads it successfully --
+   `devices.json` from the wizard also has a `mapping` section naming each `dps_<n>` (e.g. our
+   dehumidifier: `1` switch, `2` target humidity %, `5` mode, `6` current humidity %, `11` light,
+   `19` fault code). Use that to confirm `TUYA_<NAME>_DPS_SWITCH` and to build proper dashboard
+   panels for the fields worth one (see the "Entfeuchter: ..." panels in `compute.json` for an
+   example) instead of leaving them as bare numbers.
 
 A Matter device does not work this way: Matter has no direct local API of its own to poll like
 this, it needs an actual Matter controller (Home Assistant, Apple/Google/Amazon's own hub
