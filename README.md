@@ -64,6 +64,11 @@ SolarEdge SE10K  --Modbus TCP-->  poller (Python)  --> Redis (redis-stack)  <-- 
   `WEISHAUPT_POLL_INTERVAL` seconds; idles if `WEISHAUPT_HOST` is empty.
 - **meter-form**: a small web form for entering the heat pump's electricity
   meter reading by hand (see [Weishaupt heat pump](#weishaupt-heat-pump)).
+- **shelly-poller**: reads Shelly Gen3+ smart plugs locally (no cloud), every
+  `SHELLY_POLL_INTERVAL` seconds; idles if `SHELLY_DEVICES` is empty (see
+  [Load management](#load-management-on-pv-surplus-compute-controller)).
+- **compute-controller**: decides which loads (PrimeGrid PCs, a Tuya device) run on PV surplus (see
+  [Load management](#load-management-on-pv-surplus-compute-controller)).
 
 ## Data model in Redis
 
@@ -533,6 +538,13 @@ loads can never both think they have the same surplus available. Configure it in
 `COMPUTE_MACHINES=name:watts[:kind],...` (`watts` = consumption under full load; an estimate until
 a load is actually measured). Without `COMPUTE_MACHINES` the service still runs, just to publish
 the PV surplus for anything else that wants to read it (see below), deciding nothing.
+
+**Measuring a load's real wattage:** plug it into a Shelly Gen3+ smart plug (read locally by
+`shelly-poller`, no cloud) and give the plug the *same name* in `SHELLY_DEVICES=name:host,...` as
+the load has in `COMPUTE_MACHINES` -- `compute-controller`'s `machine_power()` already reads
+`compute:<name>:latest`'s `power_w`/`power_updated_at`, which `shelly-poller` feeds automatically
+once the names match, no other change needed. Without a plug, the configured `watts` is used as an
+estimate instead.
 
 Two kinds of load:
 

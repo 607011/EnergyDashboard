@@ -4,7 +4,7 @@
 PI_HOST      ?= 192.168.0.2
 PI_DIR       ?= ~/se10k
 DEPLOY_DIR   := deploy
-IMAGES       := redis/redis-stack-server:latest grafana/grafana:11.3.0 se10k-poller:latest se10k-grafana-init:latest se10k-hoymiles-poller:latest se10k-weishaupt-poller:latest se10k-meter-form:latest se10k-compute-controller:latest se10k-caddy:latest
+IMAGES       := redis/redis-stack-server:latest grafana/grafana:11.3.0 se10k-poller:latest se10k-grafana-init:latest se10k-hoymiles-poller:latest se10k-weishaupt-poller:latest se10k-meter-form:latest se10k-compute-controller:latest se10k-shelly-poller:latest se10k-caddy:latest
 COMPOSE_SRC  := docker-compose.yml
 COMPOSE_DST  := $(DEPLOY_DIR)/docker-compose.yml
 
@@ -48,7 +48,7 @@ ps:
 	docker compose ps
 
 build:
-	docker compose --profile proxy build poller grafana-init hoymiles-poller weishaupt-poller meter-form compute-controller caddy
+	docker compose --profile proxy build poller grafana-init hoymiles-poller weishaupt-poller meter-form compute-controller shelly-poller caddy
 
 # --- Deployment to the Pi ---
 #
@@ -64,6 +64,7 @@ prepare-deploy: build
 	    -e 's|build: ./weishaupt-poller|image: se10k-weishaupt-poller:latest|' \
 	    -e 's|build: ./meter-form|image: se10k-meter-form:latest|' \
 	    -e 's|build: ./compute-controller|image: se10k-compute-controller:latest|' \
+	    -e 's|build: ./shelly-poller|image: se10k-shelly-poller:latest|' \
 	    -e 's|build: ./caddy|image: se10k-caddy:latest|' \
 	    $(COMPOSE_SRC) > $(COMPOSE_DST)
 	cp .env $(DEPLOY_DIR)/.env

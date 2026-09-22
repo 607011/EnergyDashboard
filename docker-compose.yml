@@ -87,6 +87,24 @@ services:
 
   # Decides when the compute machines (PrimeGrid) should run, from the PV surplus and a forecast.
   # Dry run only: it records what it *would* switch, nothing is switched yet.
+  # Reads Shelly Gen3+ smart plugs locally (no cloud); each plug's name should match a machine
+  # name in COMPUTE_MACHINES so compute-controller picks up its real wattage automatically
+  # (machine_power() reads compute:<name>:latest, which this poller feeds -- see its docstring).
+  shelly-poller:
+    build: ./shelly-poller
+    restart: unless-stopped
+    depends_on:
+      - redis
+    environment:
+      # "name:host,name:host"; leave empty if you have no Shelly plugs yet.
+      SHELLY_DEVICES: ${SHELLY_DEVICES:-}
+      SHELLY_POLL_INTERVAL: ${SHELLY_POLL_INTERVAL:-10}
+      SHELLY_STALE_AFTER_SECONDS: ${SHELLY_STALE_AFTER_SECONDS:-60}
+      TS_RETENTION_DAYS: ${TS_RETENTION_DAYS:-365}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
   compute-controller:
     build: ./compute-controller
     restart: unless-stopped
