@@ -9,7 +9,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 5,
+  "version": 6,
   "refresh": "1m",
   "graphTooltip": 2,
   "time": {
@@ -37,7 +37,19 @@
           "color": {
             "mode": "fixed",
             "fixedColor": "green"
-          }
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "empty": {
+                  "text": "Keine Daten",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ]
         },
         "overrides": []
       },
@@ -80,7 +92,19 @@
           "color": {
             "mode": "fixed",
             "fixedColor": "green"
-          }
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "empty": {
+                  "text": "Keine Daten",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ]
         },
         "overrides": []
       },
@@ -123,7 +147,19 @@
           "color": {
             "mode": "fixed",
             "fixedColor": "green"
-          }
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "empty": {
+                  "text": "Keine Daten",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ]
         },
         "overrides": []
       },
@@ -221,7 +257,19 @@
           "color": {
             "mode": "fixed",
             "fixedColor": "green"
-          }
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "empty": {
+                  "text": "Keine Daten",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ]
         },
         "overrides": []
       },
@@ -265,7 +313,19 @@
           "color": {
             "mode": "fixed",
             "fixedColor": "green"
-          }
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "empty": {
+                  "text": "Keine Daten",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ]
         },
         "overrides": []
       },
@@ -309,7 +369,19 @@
           "color": {
             "mode": "fixed",
             "fixedColor": "orange"
-          }
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "empty": {
+                  "text": "Keine Daten",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ]
         },
         "overrides": []
       },

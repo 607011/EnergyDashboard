@@ -42,6 +42,10 @@ HOYMILES_STATIONS = os.environ.get("HOYMILES_STATIONS", "")
 
 # The cloud is not built for tight polling loops -- a few minutes is plenty for a dashboard.
 POLL_INTERVAL = float(os.environ.get("HOYMILES_POLL_INTERVAL", "300"))
+# After this long without a successful update, a station's or inverter's last-known values are
+# removed instead of left showing an old number with no sign that it's stale. Cloud data is
+# already up to 5 minutes old by nature, hence the much longer default than the other pollers'.
+STALE_AFTER_S = float(os.environ.get("STALE_AFTER_SECONDS", "900"))
 
 REDIS_HOST = os.environ.get("REDIS_HOST", "redis")
 REDIS_PORT = int(os.environ.get("REDIS_PORT", "6379"))
@@ -93,6 +97,25 @@ def to_number(value) -> float | None:
         return None
 
 
+_last_success: dict[str, float] = {}
+_cleared_stale: set[str] = set()
+
+
+def sweep_stale(r: redis.Redis) -> None:
+    """Remove a device's last-known values once it has gone without a successful update for
+    over STALE_AFTER_S. A station or inverter can go stale on its own (e.g. a burst request
+    failing while the rest of the account reads fine), so this checks every known device
+    independently rather than reacting to one specific failure.
+    """
+    now = time.monotonic()
+    for device_key, last in list(_last_success.items()):
+        if device_key not in _cleared_stale and now - last >= STALE_AFTER_S:
+            r.delete(f"hoymiles:{device_key}:latest")
+            _cleared_stale.add(device_key)
+            log.warning("No successful update for %s in over %.0fs -- cleared its last-known values",
+                       device_key, STALE_AFTER_S)
+
+
 def log_device(r: redis.Redis, device_key: str, values: dict, ts_ms: int) -> None:
     latest_key = f"hoymiles:{device_key}:latest"
 
@@ -115,6 +138,8 @@ def log_device(r: redis.Redis, device_key: str, values: dict, ts_ms: int) -> Non
         )
 
     pipe.execute()
+    _last_success[device_key] = time.monotonic()
+    _cleared_stale.discard(device_key)
 
 
 def extract_station_values(raw: dict) -> dict:
@@ -215,6 +240,7 @@ def main() -> None:
 
     while running:
         loop_start = time.monotonic()
+        sweep_stale(r)
         try:
             if client.token is None:
                 client.login()

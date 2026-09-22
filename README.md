@@ -168,6 +168,16 @@ measured separately and can momentarily disagree (same issue as
 `house_consumption_total` are clamped at 0 and the unclamped values are kept as
 `house_consumption_raw` / `house_consumption_total_raw`.
 
+**Stale data:** if the inverter (or a meter/battery reading, or a Hoymiles device, or the heat
+pump) hasn't been read successfully in a while, its "latest" values are removed rather than left
+showing an old number as if it were current -- a Stat panel in Grafana that queries a missing hash
+field shows "Keine Daten" (a value mapping on an empty string), instead of silently freezing on
+whatever was last measured. Configurable per poller: `STALE_AFTER_SECONDS` (SolarEdge, default
+120s), `HOYMILES_STALE_AFTER_SECONDS` (default 900s, since cloud data is already a few minutes old
+by nature), `WEISHAUPT_STALE_AFTER_SECONDS` (default 120s, only clears the Modbus-read fields --
+values derived from manual meter readings don't depend on that link and are left alone). History
+graphs already show this as a gap on their own, without any of this.
+
 There is no way to read a genuine whole-house consumption figure over Modbus
 here: our SolarEdge meter is a single bidirectional grid meter
 (`Export+Import`), not a separate CT clamp on the main feed, so this

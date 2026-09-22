@@ -71,6 +71,12 @@ COMPACTION_RULES = [
     for name, aggregation in (("avg", "avg"), ("min", "min"), ("max", "max"))
 ]
 
+# After this many seconds without a single successful Modbus read, the live readings are removed
+# instead of left showing an increasingly wrong, frozen number with no sign that it's stale. The
+# values derived from manual meter readings (electric_reading_kwh, jaz_*, ...) don't depend on
+# Modbus and are left alone.
+STALE_AFTER_S = float(os.environ.get("STALE_AFTER_SECONDS", "120"))
+
 MAX_BACKOFF = 60
 MAX_BLOCK = 5  # protocol limit of the heat pump
 
@@ -293,6 +299,15 @@ def ensure_compaction_rules(r: redis.Redis) -> None:
                 raise
 
 
+def clear_stale(r: redis.Redis) -> None:
+    """Remove the Modbus-read fields after a prolonged outage (see STALE_AFTER_S), keeping the
+    fields derived from manual meter readings (they don't depend on the Modbus link at all)."""
+    field_names = [field for field, _, _ in REGISTERS]
+    r.hdel(f"weishaupt:{DEVICE_KEY}:latest", *field_names)
+    log.warning("No successful Modbus read for over %.0fs -- cleared the live readings "
+                "(manual-reading based values are unaffected)", STALE_AFTER_S)
+
+
 def log_device(r: redis.Redis, values: dict, ts_ms: int, ts_at: dict | None = None) -> None:
     latest_key = f"weishaupt:{DEVICE_KEY}:latest"
     ts_at = ts_at or {}
@@ -332,6 +347,15 @@ def main() -> None:
 
     client = ModbusTcpClient(HOST, port=PORT, timeout=TIMEOUT)
     backoff = 1
+    last_success = time.monotonic()
+    cleared_stale = False
+
+    def handle_failure():
+        nonlocal cleared_stale
+        if not cleared_stale and time.monotonic() - last_success >= STALE_AFTER_S:
+            clear_stale(r)
+            cleared_stale = True
+        client.close()
 
     while running:
         loop_start = time.monotonic()
@@ -344,15 +368,17 @@ def main() -> None:
             log_device(r, values, int(time.time() * 1000), derived_at)
             log.debug("Logged %d values", len(values))
             backoff = 1
+            last_success = time.monotonic()
+            cleared_stale = False
         except (ModbusException, ConnectionError, OSError) as exc:
             log.warning("Poll failed (%s), retrying in %ss", exc, backoff)
-            client.close()
+            handle_failure()
             time.sleep(backoff)
             backoff = min(backoff * 2, MAX_BACKOFF)
             continue
         except Exception:
             log.exception("Unexpected error, retrying in %ss", backoff)
-            client.close()
+            handle_failure()
             time.sleep(backoff)
             backoff = min(backoff * 2, MAX_BACKOFF)
             continue

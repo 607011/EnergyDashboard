@@ -62,6 +62,9 @@ TIMEZONE = ZoneInfo(os.environ.get("TIMEZONE", "UTC"))
 WEATHER_INTERVAL = float(os.environ.get("WEATHER_INTERVAL", "900"))
 # Hoymiles values older than this (seconds) are ignored when adding them to the house consumption.
 HOYMILES_MAX_AGE = float(os.environ.get("HOYMILES_MAX_AGE", "900"))
+# After this many seconds without a single successful poll, the last-known values are removed
+# instead of left showing an increasingly wrong, frozen number with no sign that it's stale.
+STALE_AFTER_S = float(os.environ.get("STALE_AFTER_SECONDS", "120"))
 WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
 
 MAX_BACKOFF = 60
@@ -150,6 +153,21 @@ def flatten_for_redis(data: dict) -> dict:
             value = round(value, 4)
         flat[key] = "" if value is None else str(value)
     return flat
+
+
+def clear_stale(r: redis.Redis) -> None:
+    """Remove the last-known "latest" hashes after a prolonged outage (see STALE_AFTER_S).
+
+    All of them come from one Modbus session, so a failure that doesn't even get past
+    apply_scale_factors(inverter) takes all of them stale together. The time series are
+    untouched -- a gap there already means "no data" on its own -- and daily/weather values
+    are left alone too, since they aren't "current status" readings in the same sense.
+    """
+    keys = ["solaredge:inverter:latest", "solaredge:sun:latest"]
+    for ids, kind in ((_known_meter_ids[0], "meter"), (_known_battery_ids[0], "battery")):
+        keys += [f"solaredge:{kind}:{device_id.lower()}:latest" for device_id in (ids or ())]
+    r.delete(*keys)
+    log.warning("No successful poll for over %.0fs -- cleared the last-known values", STALE_AFTER_S)
 
 
 def connect_inverter() -> solaredge_modbus.Inverter:
@@ -468,6 +486,8 @@ def main() -> None:
     inverter = connect_inverter()
     backoff = 1
     next_weather_poll = 0.0
+    last_success = time.monotonic()
+    cleared_stale = False
 
     while running:
         loop_start = time.monotonic()
@@ -485,8 +505,13 @@ def main() -> None:
             if backoff != 1:
                 log.info("Poll recovered")
             backoff = 1
+            last_success = time.monotonic()
+            cleared_stale = False
         except Exception:
             log.exception("Poll failed, reconnecting in %ss", backoff)
+            if not cleared_stale and time.monotonic() - last_success >= STALE_AFTER_S:
+                clear_stale(r)
+                cleared_stale = True
             try:
                 inverter.disconnect()
             except Exception:

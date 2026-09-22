@@ -6,7 +6,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 3,
+  "version": 4,
   "refresh": "30s",
   "graphTooltip": 2,
   "time": {
@@ -47,7 +47,19 @@
                 "value": 0
               }
             ]
-          }
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "empty": {
+                  "text": "Keine Daten",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ]
         },
         "overrides": []
       },
@@ -100,7 +112,19 @@
                 "value": 0
               }
             ]
-          }
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "empty": {
+                  "text": "Keine Daten",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ]
         },
         "overrides": []
       },
@@ -153,7 +177,19 @@
                 "value": 0
               }
             ]
-          }
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "empty": {
+                  "text": "Keine Daten",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ]
         },
         "overrides": []
       },
@@ -209,7 +245,19 @@
                 "value": 0
               }
             ]
-          }
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "empty": {
+                  "text": "Keine Daten",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ]
         },
         "overrides": []
       },
@@ -249,7 +297,19 @@
       "fieldConfig": {
         "defaults": {
           "unit": "celsius",
-          "decimals": 1
+          "decimals": 1,
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "empty": {
+                  "text": "Keine Daten",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ]
         },
         "overrides": []
       },
@@ -288,7 +348,19 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "none"
+          "unit": "none",
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "empty": {
+                  "text": "Keine Daten",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ]
         },
         "overrides": []
       },
@@ -604,7 +676,19 @@
           "color": {
             "mode": "fixed",
             "fixedColor": "green"
-          }
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "empty": {
+                  "text": "Keine Daten",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ]
         },
         "overrides": []
       },
@@ -644,7 +728,19 @@
       "fieldConfig": {
         "defaults": {
           "unit": "hertz",
-          "decimals": 2
+          "decimals": 2,
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "empty": {
+                  "text": "Keine Daten",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ]
         },
         "overrides": []
       },
@@ -689,7 +785,19 @@
           "color": {
             "mode": "fixed",
             "fixedColor": "green"
-          }
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "empty": {
+                  "text": "Keine Daten",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ]
         },
         "overrides": []
       },
@@ -743,7 +851,19 @@
                 "value": 0
               }
             ]
-          }
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "empty": {
+                  "text": "Keine Daten",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ]
         },
         "overrides": []
       },
@@ -1074,7 +1194,19 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "watt"
+          "unit": "watt",
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "empty": {
+                  "text": "Keine Daten",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ]
         },
         "overrides": []
       },

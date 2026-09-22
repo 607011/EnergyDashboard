@@ -26,6 +26,9 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # After this long without a successful poll, "latest" values are removed instead of shown
+      # frozen and increasingly wrong; the time series (history graphs) already show a gap on their own.
+      STALE_AFTER_SECONDS: ${STALE_AFTER_SECONDS:-120}
 
   hoymiles-poller:
     build: ./hoymiles-poller
@@ -38,6 +41,9 @@ services:
       # Optional "id:name,id:name" override; leave unset to auto-discover all stations.
       HOYMILES_STATIONS: ${HOYMILES_STATIONS:-}
       HOYMILES_POLL_INTERVAL: ${HOYMILES_POLL_INTERVAL:-300}
+      # Cloud data is already up to 5 minutes old by nature, hence the longer default than the
+      # other pollers' STALE_AFTER_SECONDS.
+      STALE_AFTER_SECONDS: ${HOYMILES_STALE_AFTER_SECONDS:-900}
       TS_RETENTION_DAYS: ${TS_RETENTION_DAYS:-365}
       REDIS_HOST: redis
       REDIS_PORT: 6379
@@ -56,6 +62,7 @@ services:
       WEISHAUPT_NAME: ${WEISHAUPT_NAME:-wgb14}
       WEISHAUPT_HEATING_CIRCUITS: ${WEISHAUPT_HEATING_CIRCUITS:-2}
       WEISHAUPT_POLL_INTERVAL: ${WEISHAUPT_POLL_INTERVAL:-30}
+      STALE_AFTER_SECONDS: ${WEISHAUPT_STALE_AFTER_SECONDS:-120}
       MODBUS_TIMEOUT: ${MODBUS_TIMEOUT:-5}
       TS_RETENTION_DAYS: ${TS_RETENTION_DAYS:-365}
       REDIS_HOST: redis
