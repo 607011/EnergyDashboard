@@ -350,6 +350,22 @@ def read_expected(known_ids: set | None, actual: dict, kind: str) -> tuple[set, 
     return known_ids | actual.keys(), True
 
 
+def is_empty_battery_slot(values: dict) -> bool:
+    """The inverter also answers for a second battery slot with nothing connected: device address
+    255, capacity at the float "not implemented" value (-3.4e38). Such a slot must not count as a
+    battery -- else a read that loses just that slot (flaky WLAN link) looks incomplete and blanks
+    out the PV total (seen 2026-09-23 with a phantom "Battery2"). Meters are not filtered: the
+    real one reports serial "0", so no such test is safe there."""
+    rated = values.get("rated_energy")
+    return values.get("c_deviceaddress") == 255 or (isinstance(rated, float) and rated < -1e37)
+
+
+# Last good power per battery: a battery missing from one read (flaky WLAN) is bridged with its
+# value from the previous read if that is at most this old, instead of blanking the PV total.
+BATTERY_FALLBACK_MS = 60_000
+_last_battery_power: dict = {}
+
+
 def hoymiles_power(r: redis.Redis, now_ms: int, is_night: bool) -> float | None:
     """Combined AC power (W) of all Hoymiles microinverters, as last stored by hoymiles-poller.
 
@@ -407,16 +423,19 @@ def poll_once(inverter: solaredge_modbus.Inverter, r: redis.Redis) -> None:
     # inflated by the battery's contribution flowing onto the same bus.
     # instantaneous_power is signed (+ while charging, - while discharging),
     # so adding it back unconditionally corrects both directions at once.
-    batteries = inverter.batteries()
-    known_battery_ids, batteries_complete = read_expected(_known_battery_ids[0], batteries, "Battery")
+    battery_values = {battery_id: apply_scale_factors(battery) for battery_id, battery in inverter.batteries().items()}
+    battery_values = {k: v for k, v in battery_values.items() if not is_empty_battery_slot(v)}
+    known_battery_ids, batteries_complete = read_expected(_known_battery_ids[0], battery_values, "Battery")
     _known_battery_ids[0] = known_battery_ids
-    battery_power = 0.0 if batteries_complete else None
-    for battery_id, battery in batteries.items():
-        values = apply_scale_factors(battery)
+    for battery_id, values in battery_values.items():
         add_status_label(values, solaredge_modbus.BATTERY_STATUS_MAP)
         log_device(r, f"battery:{battery_id.lower()}", values, ts_ms)
-        if batteries_complete and isinstance(values.get("instantaneous_power"), (int, float)):
-            battery_power += values["instantaneous_power"]
+        if isinstance(values.get("instantaneous_power"), (int, float)):
+            _last_battery_power[battery_id] = (ts_ms, values["instantaneous_power"])
+    battery_power = None
+    fresh = {b: _last_battery_power.get(b) for b in known_battery_ids}
+    if batteries_complete or all(v and ts_ms - v[0] <= BATTERY_FALLBACK_MS for v in fresh.values()):
+        battery_power = sum(v[1] for v in fresh.values() if v)
 
     # The two terms are measured separately (DC input vs. battery terminals, in different
     # Modbus reads), so while the battery discharges the sum can dip below zero from
@@ -432,10 +451,9 @@ def poll_once(inverter: solaredge_modbus.Inverter, r: redis.Redis) -> None:
     # (verified against the SolarEdge app). Whatever the inverter puts out that
     # isn't exported must have gone to the house -- and whatever is imported
     # went to the house too -- so this holds regardless of charge/discharge state.
-    meters = inverter.meters()
-    known_meter_ids, meters_complete = read_expected(_known_meter_ids[0], meters, "Meter")
+    meter_values = {meter_id: apply_scale_factors(meter) for meter_id, meter in inverter.meters().items()}
+    known_meter_ids, meters_complete = read_expected(_known_meter_ids[0], meter_values, "Meter")
     _known_meter_ids[0] = known_meter_ids
-    meter_values = {meter_id: apply_scale_factors(meter) for meter_id, meter in meters.items()}
     # Now and then (seen around inverter hiccups) the meter answers for a few polls with every
     # register 0 -- lifetime energy counters included, which a grid meter in service can't read.
     # Such a read is dropped like a missing meter: logging it would put a 0 W grid flow into the

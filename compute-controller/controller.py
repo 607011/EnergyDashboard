@@ -63,6 +63,7 @@ import pc_actuator
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("compute-controller")
+logging.getLogger("paramiko").setLevel(logging.WARNING)  # else two lines per SSH connection, every minute
 
 MINUTE_MS = 60_000
 HOUR_S = 3600
@@ -104,6 +105,7 @@ class Params:
     soc_on: float = 80.0            # battery level needed to start a machine (%)
     soc_min: float = 40.0           # below this, stop immediately
     soc_fc_off: float = 95.0        # a bad forecast only stops machines while the battery is below this
+    incomplete_off_min: float = 30.0  # without complete data this long, stop the machines (safe state)
     w_per_wm2: float = 10.0         # fallback conversion irradiance -> PV power (learned if enough data)
     battery_full_by_hour: float = 12.0   # try to have the battery full by then (local time) ...
     battery_max_charge_w: float = 2500.0 # ... it can't absorb more than this; the rest is exported
@@ -170,6 +172,7 @@ def params_from_env(env=os.environ) -> Params:
         soc_on=f("COMPUTE_SOC_ON", 80),
         soc_min=f("COMPUTE_SOC_MIN", 40),
         soc_fc_off=f("COMPUTE_SOC_FC_OFF", 95),
+        incomplete_off_min=f("COMPUTE_INCOMPLETE_OFF_MIN", 30),
         w_per_wm2=f("COMPUTE_W_PER_WM2", 10),
         battery_full_by_hour=f("COMPUTE_BATTERY_FULL_BY_HOUR", 12),
         battery_max_charge_w=f("COMPUTE_BATTERY_MAX_CHARGE_W", 2500),
@@ -239,6 +242,7 @@ class Inputs:
     # name -> reason: machines with nothing to do right now (e.g. hot water already hot). They are
     # off, reserve nothing and skip every delay -- having no demand is not flapping.
     idle: dict = None
+    incomplete_min: float | None = None  # how long the data has been incomplete (None = complete)
 
 
 @dataclass
@@ -335,8 +339,15 @@ def decide(machines, states, inputs: Inputs, params: Params, now_ms: int):
             return result(state.on, f"{reason} – abwarten ({waited:.0f} von {delay_min:.0f} min)", since)
 
         if not inputs.complete or inputs.headroom_w is None:
-            d = result(state.on, "keine Entscheidung: Erzeugungs- oder Verbrauchsdaten unvollständig",
-                       state.pending_ms)
+            gone = inputs.incomplete_min or 0.0
+            if state.on and gone >= params.incomplete_off_min:
+                # Unknown surplus for this long: off is the safe state (else, e.g. after sunset,
+                # the machines would run on from the battery unnoticed).
+                d = result(False, f"seit {gone:.0f} min keine vollständigen Daten – sicherheitshalber aus")
+            else:
+                d = result(state.on, "keine Entscheidung: Erzeugungs- oder Verbrauchsdaten unvollständig"
+                           + (f" (seit {gone:.0f} min, aus nach {params.incomplete_off_min:.0f})" if gone else ""),
+                           state.pending_ms)
         else:
             h, fc, soc = inputs.headroom_w, inputs.forecast_headroom_w, inputs.soc
             discharging = inputs.battery_w is not None and inputs.battery_w < -DISCHARGING_W
@@ -751,7 +762,14 @@ def cycle(r, params, forecast, tz, learned, now_ms, tuya_devices=None):
             starts = dhw_state.get("starts", 0) if dhw_state.get("date") == today else 0
             r.hset(f"compute:{m.name}:dhw", mapping={"date": today, "starts": starts, "blocked": 1})
 
-    inputs = Inputs(complete, headroom, forecast_headroom, soc, battery_w, budget, idle)
+    if complete and headroom is not None:
+        r.delete("compute:incomplete_since")
+        incomplete_min = None
+    else:
+        r.set("compute:incomplete_since", now_ms, nx=True)
+        incomplete_min = (now_ms - int(r.get("compute:incomplete_since"))) / MINUTE_MS
+
+    inputs = Inputs(complete, headroom, forecast_headroom, soc, battery_w, budget, idle, incomplete_min)
     decisions = decide(params.machines, states, inputs, params, now_ms)
 
     pipe = r.pipeline(transaction=False)
@@ -960,6 +978,14 @@ def selftest():
     check("zwei Boosts heute: kein dritter", "heute schon 2" in dhw_idle_reason(wp, {"date": today, "starts": "2"}, False, PD, T, today))
     check("veraltete Wärmepumpen-Daten: kein Boost", "keine aktuellen" in dhw_idle_reason({**wp, "updated_at": str(T - 10 * MINUTE_MS)}, {}, False, PD, T, today))
     check("Störung: kein Boost", "Störung" in dhw_idle_reason({**wp, "fault_free": "0"}, {}, False, PD, T, today))
+
+    # --- without complete data: hold, but not forever
+    d = decide(P1.machines, {"a": State(True, long_ago)}, Inputs(False, None, None, 90.0, incomplete_min=10), P1, T)[0]
+    check("Daten 10 min unvollständig: Zustand halten", d.on and not d.changed)
+    d = decide(P1.machines, {"a": State(True, long_ago)}, Inputs(False, None, None, 90.0, incomplete_min=30), P1, T)[0]
+    check("Daten 30 min unvollständig: sicherheitshalber aus", not d.on and d.changed and "sicherheitshalber" in d.reason)
+    d = decide(P1.machines, {"a": State(False, long_ago)}, Inputs(False, None, None, 90.0, incomplete_min=5), P1, T)[0]
+    check("ohne Daten wird nichts eingeschaltet", not d.on and not d.changed)
 
     on = {"a": State(True, long_ago), "b": State(True, long_ago)}
     d = run(on, inp(700, 800))
