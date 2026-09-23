@@ -19,8 +19,10 @@ PC_<NAME>_ACTUATOR, or a "tuya" without a working device config, stays dry-run r
 Every cycle it works out
   - headroom: PV production minus house consumption *without* the compute machines (15-minute
     means), i.e. the power that would otherwise be exported or charge the battery
-  - a forecast of that headroom for the next hour: the measured production, scaled by how the
-    hourly irradiance forecast for the next hour compares with that of the last hour
+  - a forecast of that headroom for the next hour: the measured production (last 30 minutes),
+    scaled by how the irradiance forecast for the next hour compares with that of the same last
+    30 minutes (15-minute forecast values; comparing with the whole last hour instead
+    double-counted the trend: too optimistic while rising, too pessimistic while falling)
 and then decides per machine, in priority order (the order of COMPUTE_MACHINES):
   - ON  when the headroom covers the machines up to and including this one plus a margin, the
         forecast headroom does too, and the battery is charged enough
@@ -31,7 +33,7 @@ and then decides per machine, in priority order (the order of COMPUTE_MACHINES):
     (tuned with backtest.py: about 4-5 switching events per day instead of 15)
 
 Reads:  ts:inverter:power_pv_total, ts:hoymiles:*:power_w, ts:inverter:house_consumption_total,
-        solaredge:battery:battery1:latest (soe), Open-Meteo hourly irradiance
+        solaredge:battery:battery1:latest (soe), Open-Meteo irradiance (hourly + 15-minute)
 Writes: compute:latest, compute:<machine>:latest (also feeds machine_power() back into next
         cycle's headroom, whether measured by a Shelly or, for now, estimated from the decision),
         compute:<machine>:state, compute:events (list), tuya:<machine>:latest (raw device
@@ -60,6 +62,10 @@ log = logging.getLogger("compute-controller")
 
 MINUTE_MS = 60_000
 HOUR_S = 3600
+QUARTER_S = 900
+# Window of the measured production the forecast is anchored on; the irradiance it is compared
+# with must cover the same window, or the trend gets counted twice.
+PV_RECENT_MIN = 30
 
 
 # --------------------------------------------------------------------------- configuration
@@ -164,18 +170,18 @@ def params_from_env(env=os.environ) -> Params:
 
 # --------------------------------------------------------------------------- forecast (pure)
 
-def forecast_window_mean(hourly, start_s, end_s):
-    """Mean of Open-Meteo hourly values over [start_s, end_s].
+def forecast_window_mean(values, start_s, end_s, step_s=HOUR_S):
+    """Mean of Open-Meteo values over [start_s, end_s].
 
-    Each value is the mean of the hour *preceding* its timestamp, so a point stamped T covers
-    (T - 1 h, T]. `hourly` is a list of (T seconds, value). Returns None unless the hourly data
-    covers the whole window.
+    Each value is the mean of the `step_s` *preceding* its timestamp (1 h for hourly, 15 min for
+    minutely_15 data), so a point stamped T covers (T - step, T]. `values` is a list of
+    (T seconds, value). Returns None unless the data covers the whole window.
     """
     total = covered = 0.0
-    for t_end, value in hourly:
+    for t_end, value in values:
         if value is None:
             continue
-        overlap = min(end_s, t_end) - max(start_s, t_end - HOUR_S)
+        overlap = min(end_s, t_end) - max(start_s, t_end - step_s)
         if overlap > 0:
             total += value * overlap
             covered += overlap
@@ -189,7 +195,8 @@ def forecast_pv(pv_recent_w, f_next, f_ref, w_per_wm2):
 
     Anchored on what the plant actually produces: the measured recent production is scaled by
     the irradiance forecast for the next hour relative to the last hour. That cancels most of
-    the plant-specific conversion error. Around sunrise and sunset the reference irradiance is
+    the plant-specific conversion error. `f_ref` must cover the same window as `pv_recent_w`.
+    Around sunrise and sunset the reference irradiance is
     too small to divide by, so the fallback is the plain conversion irradiance -> watts.
     """
     if f_next is None:
@@ -519,11 +526,13 @@ def machine_power(r, machine, now_ms):
 
 
 class Forecast:
-    """Hourly irradiance from Open-Meteo, cached for 30 minutes."""
+    """Irradiance from Open-Meteo, hourly (whole-day battery budget) and 15-minute (next-hour
+    forecast; in Central Europe from ICON-D2, elsewhere interpolated), cached for 30 minutes."""
 
     def __init__(self, lat, lon):
         self.lat, self.lon = lat, lon
         self.hourly = []
+        self.quarter = []
         self.fetched = 0.0
 
     def get(self):
@@ -533,13 +542,16 @@ class Forecast:
             try:
                 response = requests.get("https://api.open-meteo.com/v1/forecast", params={
                     "latitude": self.lat, "longitude": self.lon, "hourly": "shortwave_radiation",
-                    "past_days": 1, "forecast_days": 2, "timezone": "UTC"}, timeout=10)
+                    "minutely_15": "shortwave_radiation", "past_days": 1, "forecast_days": 2, "timezone": "UTC"}, timeout=10)
                 response.raise_for_status()
-                data = response.json()["hourly"]
-                self.hourly = [
-                    (int(datetime.fromisoformat(t).replace(tzinfo=timezone.utc).timestamp()), v)
-                    for t, v in zip(data["time"], data["shortwave_radiation"])
-                ]
+                body = response.json()
+
+                def series(block):
+                    data = body.get(block) or {}
+                    return [(int(datetime.fromisoformat(t).replace(tzinfo=timezone.utc).timestamp()), v)
+                            for t, v in zip(data.get("time", []), data.get("shortwave_radiation", []))]
+                self.hourly = series("hourly")
+                self.quarter = series("minutely_15")
                 self.fetched = time.monotonic()
             except Exception:
                 log.exception("Forecast fetch failed, using the last one")
@@ -612,11 +624,15 @@ def cycle(r, params, forecast, tz, learned, now_ms, tuya_devices=None):
 
     # forecast of the headroom over the next hour
     hourly = forecast.get()
-    f_next = forecast_window_mean(hourly, now_s, now_s + HOUR_S)
-    f_ref = forecast_window_mean(hourly, now_s - HOUR_S, now_s)
-    pv_recent = ts_mean(r, PV_KEYS_SOLAREDGE, now_ms, 30)
+    ref_start = now_s - PV_RECENT_MIN * 60
+    f_next = forecast_window_mean(forecast.quarter, now_s, now_s + HOUR_S, QUARTER_S)
+    f_ref = forecast_window_mean(forecast.quarter, ref_start, now_s, QUARTER_S)
+    if f_next is None or f_ref is None:  # no 15-minute data: hourly, coarser but the same windows
+        f_next = forecast_window_mean(hourly, now_s, now_s + HOUR_S)
+        f_ref = forecast_window_mean(hourly, ref_start, now_s)
+    pv_recent = ts_mean(r, PV_KEYS_SOLAREDGE, now_ms, PV_RECENT_MIN)
     if pv_recent is not None:
-        pv_recent += sum(ts_mean(r, k, now_ms, 30) or 0.0 for k in hoymiles_keys(r))
+        pv_recent += sum(ts_mean(r, k, now_ms, PV_RECENT_MIN) or 0.0 for k in hoymiles_keys(r))
     pv_forecast = forecast_pv(pv_recent, f_next, f_ref, learned)
     forecast_headroom = (pv_forecast - baseline_house) if pv_forecast is not None and baseline_house is not None else None
 
@@ -772,6 +788,10 @@ def selftest():
     check("Fenster deckt genau eine Stunde", near(forecast_window_mean(hourly, 10 * H, 11 * H), 300.0))
     check("Fenster über zwei Stunden gewichtet", near(forecast_window_mean(hourly, 10.5 * H, 11.5 * H), (300 + 500) / 2))
     check("Fenster ohne volle Daten: None", forecast_window_mean(hourly, 11.5 * H, 12.5 * H) is None)
+    Q = QUARTER_S
+    quarter = [(40 * Q, 100.0), (41 * Q, 200.0), (42 * Q, 300.0)]   # covers 39Q..42Q
+    check("15-Min-Werte: letzte halbe Stunde", near(forecast_window_mean(quarter, 40 * Q, 42 * Q, Q), 250.0))
+    check("15-Min-Werte: halbe Viertelstunde anteilig", near(forecast_window_mean(quarter, 40.5 * Q, 41.5 * Q, Q), 250.0))
 
     # --- forecast: scaled by the trend, anchored on measured production
     check("Prognose: gleiche Strahlung, gleiche Leistung", near(forecast_pv(2000, 400, 400, 10), 2000))

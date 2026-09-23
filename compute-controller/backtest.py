@@ -1,12 +1,17 @@
 """Replays the decision rules over the stored history, to tune the settings.
 
-    docker compose run --rm --no-deps compute-controller python backtest.py [days]
+    docker compose run --rm --no-deps compute-controller python backtest.py [days] [--prognose] [--ab=2026-09-23T12:00]
 
 Steps through the last days in 5-minute steps, rebuilds production, consumption and battery level
 from Redis and runs the same `decide` as the controller. There are no historical forecasts, so the
 forecast rule is left out; the machines' own consumption isn't in the history either, so the
 headroom is the one *without* machines, which is what the controller works with anyway.
 Prints run hours and the number of switching events for a few variants of the settings.
+
+It also checks the stored forecasts (ts:compute:forecast_headroom_w) against what actually came:
+the mean headroom over the hour after each forecast, by local hour of day, so a bias while PV
+rises (morning) or falls (afternoon) shows up. With --prognose only that part runs; --ab= limits
+it to forecasts from that local time on (e.g. to compare before and after a change).
 """
 
 import dataclasses
@@ -101,10 +106,47 @@ VARIANTS = {
 }
 
 
+def forecast_accuracy(r, days, tz, since_ms=None):
+    """Per local hour: (n, mean error forecast - actual, mean absolute error), in W. The actual
+    value is the mean headroom over the hour after the forecast; needs 10 of its 12 5-min buckets."""
+    now = int(time.time() * 1000)
+    start = since_ms or now - int(days * 24 * 3600 * 1000)
+
+    def agg(key):
+        return dict(r.ts().range(key, start, now, aggregation_type="avg", bucket_size_msec=STEP))
+
+    forecasts, actual = agg("ts:compute:forecast_headroom_w"), agg("ts:compute:headroom_w")
+    per_hour = {}
+    for t, f in forecasts.items():
+        following = [actual[t + i * STEP] for i in range(12) if t + i * STEP in actual]
+        if len(following) < 10:
+            continue
+        err = f - sum(following) / len(following)
+        per_hour.setdefault(datetime.fromtimestamp(t / 1000, tz).hour, []).append(err)
+    return {h: (len(e), sum(e) / len(e), sum(abs(x) for x in e) / len(e)) for h, e in sorted(per_hour.items())}
+
+
+def print_forecast_accuracy(r, days, tz, since_ms=None):
+    stats = forecast_accuracy(r, days, tz, since_ms)
+    print("\nPrognose gegen tatsächlichen Überschuss der Folgestunde (positiv = zu optimistisch):")
+    if not stats:
+        print("  noch keine auswertbaren Prognosen")
+        return
+    print("  Uhrzeit  Anzahl  Abweichung  mittl. Fehler")
+    for hour, (n, bias, mae) in stats.items():
+        print(f"  {hour:02d}-{hour + 1:02d}   {n:6d}  {bias:+8.0f} W  {mae:9.0f} W")
+
+
 if __name__ == "__main__":
-    days = float(sys.argv[1]) if len(sys.argv) > 1 else 4
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    days = float(args[0]) if args else 4
     r = redis.Redis(host=os.environ.get("REDIS_HOST", "redis"), decode_responses=True)
     tz = ZoneInfo(os.environ.get("TIMEZONE", "UTC"))
+    since = next((a.split("=", 1)[1] for a in sys.argv[1:] if a.startswith("--ab=")), None)
+    since_ms = int(datetime.fromisoformat(since).replace(tzinfo=tz).timestamp() * 1000) if since else None
+    print_forecast_accuracy(r, days, tz, since_ms)
+    if "--prognose" in sys.argv:
+        sys.exit(0)
     base = c.params_from_env()
     if not base.machines:
         base.machines = c.parse_machines("a:200,b:250,c:100")
