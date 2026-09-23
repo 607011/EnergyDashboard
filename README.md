@@ -288,6 +288,15 @@ poller also keeps daily minimum, mean and maximum forever
 readings and the values derived from them are stored without a time limit as well;
 `sync_retention` in both pollers leaves those alone.
 
+**Compressor runs:** a run lasts while the power demand is above 0. At its end the poller stores
+its length in minutes in `ts:weishaupt:<name>:run_minutes_dhw`, `..._heating` or `..._other`
+(by the operating status seen during most of it: 20 = hot water, 19/35 = heating), kept
+forever; on first start it derives the runs from the stored history. The dashboard shows starts
+per day and the mean run time per start (daily count/avg of those series). The installer's rule
+of thumb: about an hour per start; many short runs (cycling) cost efficiency, hot-water loads are
+shorter by nature. Also logged: `evaporation_temp` (register 33106), which follows the brine
+temperature -- the brine temperatures themselves are only in the WEM portal, not on Modbus.
+
 ### Electricity use and JAZ from manual readings
 
 A seasonal performance factor (JAZ) is thermal energy divided by electricity

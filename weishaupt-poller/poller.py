@@ -64,6 +64,14 @@ LONG_TERM_FIELDS = {
     "electric_kwh_since_first", "electric_kwh_last_interval", "electric_kwh_per_day_last",
     "thermal_kwh_since_first", "thermal_kwh_last_interval",
 }
+# Compressor runs (see track_runs): one point per finished run, at its end, value = minutes.
+# "Starts per day" and "run time per start" are daily count/avg aggregations of these.
+RUN_MODES = {20: "dhw", 19: "heating", 35: "heating"}  # operating status -> kind of run
+RUN_FIELDS = ("run_minutes_dhw", "run_minutes_heating", "run_minutes_other")
+RUN_STATE_KEY = f"weishaupt:{DEVICE_KEY}:run"
+# A run whose end we didn't see (poller down for longer than this) is dropped, not guessed.
+RUN_MAX_GAP_MS = 5 * 60 * 1000
+LONG_TERM_FIELDS |= set(RUN_FIELDS)
 # Fields that only exist in the "latest" hash, not as time series of their own.
 HASH_ONLY_FIELDS = {"electric_reading_kwh", "electric_reading_at", "thermal_reading_kwh"}
 
@@ -161,6 +169,9 @@ REGISTERS: list[tuple[str, int, callable]] = [
     ("power_demand_pct", 33103, percent),
     ("flow_temp", 33104, temp),
     ("return_temp", 33105, temp),
+    # refrigerant evaporation temperature: follows the brine (source) temperature, which the
+    # Modbus interface doesn't expose (only the WEM portal does)
+    ("evaporation_temp", 33106, temp),
     # second heat generator / electric heaters
     ("second_generator_on", 34101, plain),
     ("heater1_on", 34104, plain),
@@ -304,6 +315,75 @@ def apply_boost(client: ModbusTcpClient, r: redis.Redis, values: dict) -> None:
     values["dhw_boost_active"] = int(r.hexists(BOOST_STATE_KEY, "saved_normal"))
 
 
+def run_mode(counts: dict) -> str:
+    """The kind of a run: the mode seen in most of its samples."""
+    return max(counts, key=counts.get) if counts else "other"
+
+
+def runs_from_samples(samples, max_gap_ms: int = RUN_MAX_GAP_MS) -> list[tuple[int, int, str]]:
+    """[(ts_ms, power_demand_pct, operating_status or None)] in time order -> [(start, end, mode)].
+    A run lasts while the power demand is above 0; it ends at the first sample at 0. A gap in
+    the samples longer than max_gap_ms drops the run in progress (its end is unknown)."""
+    runs, start, last, counts = [], None, None, {}
+    for ts, demand, status in samples:
+        if start is not None and ts - last > max_gap_ms:
+            start, counts = None, {}
+        if demand > 0:
+            if start is None:
+                start = ts
+            mode = RUN_MODES.get(status, "other")
+            counts[mode] = counts.get(mode, 0) + 1
+        elif start is not None:
+            runs.append((start, ts, run_mode(counts)))
+            start, counts = None, {}
+        last = ts
+    return runs
+
+
+def record_run(r: redis.Redis, start_ms: int, end_ms: int, mode: str) -> None:
+    field = f"run_minutes_{mode}"
+    r.ts().add(f"ts:weishaupt:{DEVICE_KEY}:{field}", end_ms, round((end_ms - start_ms) / 60000, 1),
+               retention_msecs=0, labels={"device": DEVICE_KEY, "field": field}, duplicate_policy="last")
+
+
+def track_runs(r: redis.Redis, values: dict, ts_ms: int) -> None:
+    """Follows the compressor across polls (state in Redis, so a restart doesn't lose a run)."""
+    demand = values.get("power_demand_pct")
+    if demand is None:
+        return
+    state = r.hgetall(RUN_STATE_KEY)
+    if state and ts_ms - int(state.get("last_ms", 0)) > RUN_MAX_GAP_MS:
+        r.delete(RUN_STATE_KEY)  # we missed how that run ended
+        state = {}
+    if demand > 0:
+        mode = RUN_MODES.get(values.get("operating_status"), "other")
+        pipe = r.pipeline()
+        if not state:
+            pipe.hset(RUN_STATE_KEY, "start_ms", ts_ms)
+        pipe.hset(RUN_STATE_KEY, "last_ms", ts_ms)
+        pipe.hincrby(RUN_STATE_KEY, f"n_{mode}", 1)
+        pipe.execute()
+    elif state:
+        counts = {k[2:]: int(v) for k, v in state.items() if k.startswith("n_")}
+        record_run(r, int(state["start_ms"]), ts_ms, run_mode(counts))
+        r.delete(RUN_STATE_KEY)
+
+
+def backfill_runs(r: redis.Redis) -> None:
+    """Once, when no run series exists yet: derive the runs from the stored history."""
+    if any(r.exists(f"ts:weishaupt:{DEVICE_KEY}:{field}") for field in RUN_FIELDS):
+        return
+    try:
+        demand = r.ts().range(f"ts:weishaupt:{DEVICE_KEY}:power_demand_pct", "-", "+")
+        status = dict(r.ts().range(f"ts:weishaupt:{DEVICE_KEY}:operating_status", "-", "+"))
+    except redis.ResponseError:
+        return
+    runs = runs_from_samples([(t, v, int(status[t]) if t in status else None) for t, v in demand])
+    for start, end, mode in runs:
+        record_run(r, start, end, mode)
+    log.info("Backfilled %d compressor runs from the history", len(runs))
+
+
 def derive_efficiency(r: redis.Redis) -> tuple[dict, dict]:
     """From the manual readings, derive electricity use, thermal energy and the seasonal performance factor.
 
@@ -439,6 +519,7 @@ def main() -> None:
     log.info("Connected to Redis at %s:%s", REDIS_HOST, REDIS_PORT)
     sync_retention(r)
     ensure_compaction_rules(r)
+    backfill_runs(r)
 
     client = ModbusTcpClient(HOST, port=PORT, timeout=TIMEOUT)
     backoff = 1
@@ -461,7 +542,9 @@ def main() -> None:
             apply_boost(client, r, values)
             derived, derived_at = derive_efficiency(r)
             values.update(derived)
-            log_device(r, values, int(time.time() * 1000), derived_at)
+            now_ms = int(time.time() * 1000)
+            log_device(r, values, now_ms, derived_at)
+            track_runs(r, values, now_ms)
             log.debug("Logged %d values", len(values))
             backoff = 1
             last_success = time.monotonic()
@@ -518,6 +601,14 @@ def selftest() -> bool:
           boost_plan(off, {"date": day, "writes": "12", "saved_normal": "520"}, 580, 30, now, day)[0] == "restore")
     check("Register unlesbar: nichts tun", boost_plan(wish, st, None, 0, now, day)[:2] == (None, []))
     check("neuer Tag: Schreibzähler zurück", boost_plan(wish, {"date": "2026-09-22", "writes": "12"}, 520, 0, now, day)[0] == "start")
+
+    m = 60_000
+    samples = [(0, 0, 25), (m, 30, 20), (2 * m, 31, 20), (3 * m, 0, 25),         # 2 min hot water
+               (10 * m, 20, 19), (11 * m, 20, 19), (12 * m, 20, 20), (13 * m, 0, 19),  # 3 min, mostly heating
+               (20 * m, 30, 20), (40 * m, 0, 25)]                                   # gap: end unknown
+    check("Läufe aus dem Verlauf: Dauer und Art",
+          runs_from_samples(samples) == [(m, 3 * m, "dhw"), (10 * m, 13 * m, "heating")])
+    check("unbekannter Status zählt als sonstiger Lauf", runs_from_samples([(0, 5, 99), (m, 0, 25)]) == [(0, m, "other")])
 
     print("Alle Tests bestanden" if failures == 0 else f"{failures} Test(s) fehlgeschlagen")
     return failures == 0
