@@ -114,10 +114,13 @@ def ssh_run(host: str, user: str, key_path: str, command: str, wait: bool = Fals
         client.close()
 
 
-def shelly_set_switch(host: str, on: bool) -> None:
+def shelly_set_switch(host: str, on: bool, toggle_after_s: float | None = None) -> None:
+    """toggle_after_s: the plug itself flips back after that long (a timer that survives us)."""
+    params = {"id": 0, "on": str(on).lower()}
+    if toggle_after_s:
+        params["toggle_after"] = toggle_after_s
     try:
-        response = requests.get(f"http://{host}/rpc/Switch.Set", params={"id": 0, "on": str(on).lower()},
-                                timeout=SHELLY_TIMEOUT_S)
+        response = requests.get(f"http://{host}/rpc/Switch.Set", params=params, timeout=SHELLY_TIMEOUT_S)
         response.raise_for_status()
     except requests.RequestException as exc:
         raise ActuationError(f"Shelly {host} switch failed: {exc}") from exc

@@ -319,6 +319,37 @@ The heat pump counts whole kWh, so short intervals are imprecise; a JAZ over
 weeks is far more trustworthy. Readings are stored forever
 (`ts:weishaupt:<name>:electric_reading_kwh` and `...:thermal_reading_kwh`).
 
+### Hot-water boost on PV surplus
+
+With surplus to spare, the heat pump can store it as hot water: `compute-controller` treats it as a
+load of kind `weishaupt` in `COMPUTE_MACHINES` (e.g. `warmwasser:2000:weishaupt`; ~2 kW is what a
+WGB 14 drew while heating water here, measured from the house consumption). A boost raises the
+DHW **Normal** temperature to `COMPUTE_DHW_TARGET_C` (holding register 42103) and starts a
+**push** (42102, minutes). The push matters: the heat pump otherwise ignores a small gap between
+setpoint and water temperature (its switching hysteresis); tested on 2026-09-23, a push starts
+loading within ~5 minutes even at 3.5 K below the setpoint, without the electric heaters.
+
+- **When:** only while the water is at least `COMPUTE_DHW_START_DELTA_K` (5 K) below the target,
+  at most `COMPUTE_DHW_MAX_PER_DAY` (2) boosts a day, in its place in the priority queue like any
+  other load (same surplus, forecast and battery rules). Without that demand it is "idle" and
+  reserves nothing, so it doesn't take surplus away from the machines behind it.
+- **Until:** the target is reached, the surplus goes (after the usual off-delay), or an electric
+  heater comes on -- then the boost stops and none runs again that day (surplus through a heating
+  rod is the one thing not to do).
+- **Who writes:** only `weishaupt-poller`, the heat pump's sole Modbus client. The controller puts
+  its wish into `weishaupt:<name>:boost` with a 10-minute deadline, renewed every minute. The poller
+  saves the Normal temperature *before* raising it (`weishaupt:<name>:boost_state`) and restores it
+  when the wish ends or its deadline passes, so a crashed controller or a restarted poller can't
+  leave the heat pump at 58 degC. Setting writes are capped at `WEISHAUPT_MAX_WRITES_PER_DAY`
+  (12); restoring is never held back. `python poller.py --selftest` checks this logic.
+- **Circulation pump:** `COMPUTE_DHW_CIRCULATION` names the Shelly of the hot-water circulation
+  pump (in `SHELLY_DEVICES`); while boosting it is switched on with a 10-minute timer of its own,
+  renewed every minute, so it flushes the pipes with the hot water. Its normal schedule lives in
+  the plug itself (Shelly `Schedule.Create`, independent of the Pi): here 6-8, 12-14 and
+  18-20 h, 5 minutes at every full and half hour.
+- The **Wärmepumpe** dashboard shows the Normal setpoint, the push and whether a boost is on; the
+  load management dashboard shows its decision and reason like for every other load.
+
 ## Dashboards
 
 - **SolarEdge SE10K-RWB48** (`grafana/dashboards/solaredge.json`): total PV
@@ -546,7 +577,7 @@ the load has in `COMPUTE_MACHINES` -- `compute-controller`'s `machine_power()` a
 once the names match, no other change needed. Without a plug, the configured `watts` is used as an
 estimate instead.
 
-Two kinds of load:
+Three kinds of load:
 
 - **`pc`** (default, no `:kind` needed): a PC to run PrimeGrid on. Dry run unless
   `PC_<NAME>_ACTUATOR` is set (see below) -- without it, the machine is just decided, never
@@ -554,8 +585,11 @@ Two kinds of load:
 - **`tuya`**: a local, cloud-free Tuya device (e.g. a dehumidifier) switched for real over the LAN,
   via [tinytuya](https://github.com/jasonacox/tinytuya) -- no ongoing cloud dependency, but its
   `local_key` has to be read out once (see below).
+- **`weishaupt`**: the heat pump's hot water, boosted on surplus -- see "Hot-water boost on PV
+  surplus" in the heat pump section. It only competes for surplus while the water is well below
+  the target; otherwise it's idle and reserves nothing.
 
-Either kind's real actuation is additionally guarded by `COMPUTE_MODE`: `dryrun` (default) never
+Each kind's real actuation is additionally guarded by `COMPUTE_MODE`: `dryrun` (default) never
 actuates *anything*; `live` actuates every machine that has its actuator configured. A `tuya`
 machine's own consumption (measured, if it reports power, else the configured watts while its
 switch is on) feeds back into the next cycle's headroom automatically; a `pc` machine's does too,

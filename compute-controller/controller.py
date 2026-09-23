@@ -11,6 +11,10 @@ Two kinds of load, per machine ("name:watts" or "name:watts:kind" in COMPUTE_MAC
     on/off sequencing); a machine without it configured just gets decided, never actuated.
   - "tuya": a local, cloud-free Tuya device (e.g. a dehumidifier) switched for real over the LAN
     (see tuya_client.py and the README for how to get its id/local_key).
+  - "weishaupt": the heat pump's hot water, boosted on surplus (Normal temperature raised to
+    COMPUTE_DHW_TARGET_C plus a push). It only asks for surplus while the water is well below the
+    target (see dhw_idle_reason) -- otherwise it reserves nothing. weishaupt-poller does the Modbus
+    writes; this only puts the wish into Redis (see that poller's docstring).
 
 Either kind's real actuation is additionally guarded by COMPUTE_MODE: "dryrun" (default) never
 actuates anything; "live" actuates every machine that has its actuator configured (a "pc" without
@@ -107,6 +111,13 @@ class Params:
     forecast_derate: float = 0.8         # safety factor on the irradiance -> PV power forecast
     pc_ssh_key: str = "/run/secrets/pc_ssh_key"  # private key for "pc" actuation over SSH
     shelly_hosts: dict = None  # name -> host, from SHELLY_DEVICES (for the "shelly" pc actuator)
+    # "weishaupt" hot-water boost
+    weishaupt_name: str = "wgb14"      # weishaupt-poller's WEISHAUPT_NAME
+    dhw_target_c: float = 58.0         # boost the hot water to this ...
+    dhw_start_delta_k: float = 5.0     # ... once it's at least this far below it
+    dhw_max_per_day: int = 2           # boosts started per day (each writes stored settings)
+    dhw_push_min: int = 120
+    dhw_circulation: str = ""          # Shelly (SHELLY_DEVICES name) of the circulation pump, run while boosting
 
 
 def parse_shelly_hosts(spec: str) -> dict:
@@ -165,6 +176,12 @@ def params_from_env(env=os.environ) -> Params:
         forecast_derate=f("COMPUTE_FORECAST_DERATE", 0.8),
         pc_ssh_key=env.get("PC_SSH_KEY_PATH", "/run/secrets/pc_ssh_key"),
         shelly_hosts=parse_shelly_hosts(env.get("SHELLY_DEVICES", "")),
+        weishaupt_name=env.get("WEISHAUPT_NAME", "wgb14"),
+        dhw_target_c=f("COMPUTE_DHW_TARGET_C", 58),
+        dhw_start_delta_k=f("COMPUTE_DHW_START_DELTA_K", 5),
+        dhw_max_per_day=int(f("COMPUTE_DHW_MAX_PER_DAY", 2)),
+        dhw_push_min=int(f("COMPUTE_DHW_PUSH_MIN", 120)),
+        dhw_circulation=env.get("COMPUTE_DHW_CIRCULATION", ""),
     )
 
 
@@ -218,6 +235,9 @@ class Inputs:
     # load_w -> (ok, text): may this much machine load take surplus away from the battery and it
     # still gets full by the deadline (see battery_budget)? None = no forecast, fall back to soc_on.
     budget: object = None
+    # name -> reason: machines with nothing to do right now (e.g. hot water already hot). They are
+    # off, reserve nothing and skip every delay -- having no demand is not flapping.
+    idle: dict = None
 
 
 @dataclass
@@ -238,6 +258,39 @@ class Decision:
 
 
 DISCHARGING_W = 50.0  # battery power below minus this counts as "discharging"
+WEISHAUPT_STALE_MS = 5 * MINUTE_MS
+
+
+def dhw_idle_reason(wp: dict, dhw_state: dict, boosting: bool, params: "Params", now_ms: int, today: str):
+    """Why the hot-water boost has nothing to do now (None = it may compete for surplus).
+
+    wp: weishaupt:<name>:latest; dhw_state: compute:<name>:dhw (date, starts, blocked).
+    A running boost continues until the target is reached; a new one only starts once the water
+    has cooled to target - start_delta, at most dhw_max_per_day times a day, and never again on a
+    day an electric heater came on during one (burning surplus at COP 1 is exactly what not to do).
+    """
+    try:
+        fresh = now_ms - int(wp.get("updated_at", 0)) <= WEISHAUPT_STALE_MS
+        dhw = float(wp["dhw_temp"])
+    except (KeyError, ValueError):
+        fresh = False
+    if not fresh:
+        return "keine aktuellen Daten der Wärmepumpe"
+    if wp.get("fault_free") == "0":
+        return "Wärmepumpe meldet eine Störung"
+    today_state = dhw_state if dhw_state.get("date") == today else {}
+    if today_state.get("blocked") == "1":
+        return "Heizstab lief während eines Boosts – heute kein Boost mehr"
+    if boosting and (wp.get("heater1_on") == "1" or wp.get("heater2_on") == "1"):
+        return "Heizstab eingeschaltet – Boost abgebrochen"
+    target = params.dhw_target_c
+    if boosting:
+        return f"Ziel {target:.0f} °C erreicht ({dhw:.1f} °C)" if dhw >= target else None
+    if dhw > target - params.dhw_start_delta_k:
+        return f"Warmwasser {dhw:.1f} °C, Boost erst unter {target - params.dhw_start_delta_k:.1f} °C"
+    if int(today_state.get("starts", 0)) >= params.dhw_max_per_day:
+        return f"heute schon {params.dhw_max_per_day} Boosts"
+    return None
 
 
 def decide(machines, states, inputs: Inputs, params: Params, now_ms: int):
@@ -258,6 +311,9 @@ def decide(machines, states, inputs: Inputs, params: Params, now_ms: int):
     for machine in machines:
         load = reserved + machine.watts
         state = states.get(machine.name) or State(False, 0, 0)
+        if inputs.idle and machine.name in inputs.idle:
+            decisions.append(Decision(machine, False, state.on, load + params.margin_on_w, inputs.idle[machine.name]))
+            continue
         on_threshold = load + params.margin_on_w
         off_threshold = load - params.tolerance_off_w
         age_min = (now_ms - state.since_ms) / MINUTE_MS
@@ -514,6 +570,30 @@ def actuate_pc(r: redis.Redis, params: "Params", machine: Machine, want_on: bool
     return shutdown_sent, owned
 
 
+def actuate_dhw(r, params: "Params", machine: Machine, want_on: bool, live: bool, now_ms: int, wp: dict) -> float:
+    """Hands the hot-water boost wish to weishaupt-poller -- refreshed every cycle with a deadline,
+    so if this controller stops, the poller restores the heat pump's setting on its own -- and
+    runs the circulation pump while boosting (its own timer turns it off again). Returns the power
+    to count for the machine: the estimate while the compressor runs, else 0."""
+    active = want_on and live
+    r.hset(f"weishaupt:{params.weishaupt_name}:boost", mapping={
+        "active": int(active), "target_c": params.dhw_target_c, "push_min": params.dhw_push_min,
+        "deadline_ms": now_ms + 10 * MINUTE_MS, "updated_at": now_ms})
+    if active and params.dhw_circulation:
+        host = (params.shelly_hosts or {}).get(params.dhw_circulation)
+        try:
+            if not host:
+                raise pc_actuator.ActuationError(f"no SHELLY_DEVICES entry named {params.dhw_circulation!r}")
+            pc_actuator.shelly_set_switch(host, True, toggle_after_s=600)
+        except pc_actuator.ActuationError as exc:
+            log.warning("%s: circulation pump not switched (%s)", machine.name, exc)
+    try:
+        running = float(wp.get("power_demand_pct") or 0) > 0
+    except ValueError:
+        running = False
+    return machine.watts if active and running else 0.0
+
+
 def machine_power(r, machine, now_ms):
     """Measured power of a machine (from the Shelly plug, once there is one); None while unknown."""
     h = r.hgetall(f"compute:{machine.name}:latest")
@@ -651,7 +731,22 @@ def cycle(r, params, forecast, tz, learned, now_ms, tuya_devices=None):
                             baseline_house, learned, params.forecast_derate, soft_label)
     base_budget = budget(0.0) if budget else None
 
-    inputs = Inputs(complete, headroom, forecast_headroom, soc, battery_w, budget)
+    # hot-water boost: is there anything to do at all? (see dhw_idle_reason)
+    today = local_now.strftime("%Y-%m-%d")
+    idle, weishaupt_values = {}, {}
+    for m in params.machines:
+        if m.kind != "weishaupt":
+            continue
+        wp = weishaupt_values[m.name] = r.hgetall(f"weishaupt:{params.weishaupt_name}:latest")
+        dhw_state = r.hgetall(f"compute:{m.name}:dhw")
+        reason = dhw_idle_reason(wp, dhw_state, states[m.name].on, params, now_ms, today)
+        if reason:
+            idle[m.name] = reason
+        if reason and reason.startswith("Heizstab eingeschaltet"):
+            starts = dhw_state.get("starts", 0) if dhw_state.get("date") == today else 0
+            r.hset(f"compute:{m.name}:dhw", mapping={"date": today, "starts": starts, "blocked": 1})
+
+    inputs = Inputs(complete, headroom, forecast_headroom, soc, battery_w, budget, idle)
     decisions = decide(params.machines, states, inputs, params, now_ms)
 
     pipe = r.pipeline(transaction=False)
@@ -682,11 +777,18 @@ def cycle(r, params, forecast, tz, learned, now_ms, tuya_devices=None):
         name = d.machine.name
         is_tuya = bool(d.machine.kind == "tuya" and tuya_devices and name in tuya_devices)
         has_pc_actuator = d.machine.kind == "pc" and bool(d.machine.pc_actuator_kind)
-        actuated = (is_tuya or has_pc_actuator) and live
+        is_dhw = d.machine.kind == "weishaupt"
+        actuated = (is_tuya or has_pc_actuator or is_dhw) and live
+        if is_dhw and d.changed and d.on:
+            h = r.hgetall(f"compute:{name}:dhw")
+            same_day = h.get("date") == today
+            pipe.hset(f"compute:{name}:dhw", mapping={
+                "date": today, "starts": (int(h.get("starts", 0)) if same_day else 0) + 1,
+                "blocked": h.get("blocked", 0) if same_day else 0})
         if d.changed:
             pipe.hset(f"compute:{name}:state", mapping={"on": int(d.on), "since_ms": now_ms, "pending_ms": 0})
             stamp = datetime.fromtimestamp(now_s, tz).strftime("%d.%m. %H:%M")
-            note = "geschaltet" if actuated else ("Probelauf, kein Aktor" if not (is_tuya or has_pc_actuator) else "Probelauf, nicht geschaltet")
+            note = "geschaltet" if actuated else ("Probelauf, kein Aktor" if not (is_tuya or has_pc_actuator or is_dhw) else "Probelauf, nicht geschaltet")
             line = f"{stamp}  {name}: {'EIN' if d.on else 'AUS'} ({note}) – {d.reason}"
             pipe.lpush("compute:events", line)
             pipe.ltrim("compute:events", 0, 199)
@@ -705,6 +807,8 @@ def cycle(r, params, forecast, tz, learned, now_ms, tuya_devices=None):
             power_w = poll_and_actuate_tuya(r, tuya_devices[name], d.machine, d.on, live, now_ms)
         elif has_pc_actuator:
             shutdown_sent, owned = actuate_pc(r, params, d.machine, d.on, live)
+        elif is_dhw:
+            power_w = actuate_dhw(r, params, d.machine, d.on, live, now_ms, weishaupt_values.get(name, {}))
         machine_fields = {
             "desired": int(d.on), "reason": d.reason, "watts": d.machine.watts,
             "threshold_on_w": d.threshold_on_w, "decided_at": now_ms, "actuated": int(actuated),
@@ -826,6 +930,28 @@ def selftest():
     fresh_off = {"a": State(False, T - 5 * MINUTE_MS)}
     P1 = Params(machines=[Machine("a", 200)], on_delay_min=0, off_delay_min=0, min_on_min=30, min_off_min=30)
     check("Mindestpause verhindert Neustart", not decide(P1.machines, fresh_off, inp(900, 900), P1, T)[0].on)
+
+    # --- hot-water boost: a machine without demand reserves nothing
+    PW = Params(machines=[Machine("ww", 2000, "weishaupt"), Machine("a", 200)], on_delay_min=0,
+                off_delay_min=0, min_on_min=30, min_off_min=30)
+    dw = {d.machine.name: d for d in decide(PW.machines, {"ww": State(False, long_ago), "a": State(False, long_ago)},
+                                            Inputs(True, 450, 800, 90.0, idle={"ww": "Warmwasser warm"}), PW, T)}
+    check("Warmwasser ohne Bedarf: aus, reserviert nichts, Rechner startet", not dw["ww"].on and dw["a"].on)
+    dw = decide(PW.machines[:1], {"ww": State(True, T - MINUTE_MS)}, Inputs(True, 5000, 5000, 90.0, idle={"ww": "Ziel erreicht"}), PW, T)[0]
+    check("Boost am Ziel: sofort aus, trotz Mindestlaufzeit", not dw.on and dw.changed)
+    wp = {"updated_at": str(T), "dhw_temp": "50.0", "fault_free": "1", "heater1_on": "0", "heater2_on": "0"}
+    today = "2026-09-23"
+    PD = Params(machines=[])
+    check("Warmwasser 50 °C (< 53): Boost möglich", dhw_idle_reason(wp, {}, False, PD, T, today) is None)
+    check("Warmwasser 55 °C: kein neuer Boost", "erst unter 53.0" in dhw_idle_reason({**wp, "dhw_temp": "55.0"}, {}, False, PD, T, today))
+    check("laufender Boost bei 55 °C: weiter", dhw_idle_reason({**wp, "dhw_temp": "55.0"}, {}, True, PD, T, today) is None)
+    check("laufender Boost bei 58 °C: Ziel erreicht", "erreicht" in dhw_idle_reason({**wp, "dhw_temp": "58.0"}, {}, True, PD, T, today))
+    check("Heizstab während Boost: Abbruch", "Heizstab" in dhw_idle_reason({**wp, "heater1_on": "1"}, {}, True, PD, T, today))
+    check("nach Heizstab-Abbruch heute gesperrt", "heute kein Boost" in dhw_idle_reason(wp, {"date": today, "blocked": "1"}, False, PD, T, today))
+    check("Sperre gilt nur für den Tag", dhw_idle_reason(wp, {"date": "2026-09-22", "blocked": "1"}, False, PD, T, today) is None)
+    check("zwei Boosts heute: kein dritter", "heute schon 2" in dhw_idle_reason(wp, {"date": today, "starts": "2"}, False, PD, T, today))
+    check("veraltete Wärmepumpen-Daten: kein Boost", "keine aktuellen" in dhw_idle_reason({**wp, "updated_at": str(T - 10 * MINUTE_MS)}, {}, False, PD, T, today))
+    check("Störung: kein Boost", "Störung" in dhw_idle_reason({**wp, "fault_free": "0"}, {}, False, PD, T, today))
 
     on = {"a": State(True, long_ago), "b": State(True, long_ago)}
     d = run(on, inp(700, 800))

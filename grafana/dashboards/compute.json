@@ -27,7 +27,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**Eine Prioritätsliste, mehrere Geräte:** `COMPUTE_MACHINES` legt die Reihenfolge fest, in der Geräte vom PV-Überschuss profitieren -- wer zuerst in der Liste steht, bekommt zuerst Überschuss zugeteilt. Bei `COMPUTE_MODE=live` wird jedes Gerät mit eingerichtetem Aktor **wirklich geschaltet** (Tuya-Geräte über TUYA_*, Rechner über PC_*_ACTUATOR: `shelly` = SSH-Shutdown + Steckdose trennen, `wol` = SSH-Ruhezustand + Wake-on-LAN) -- ohne eingerichteten Aktor bleibt ein Gerät Probelauf. Die Spalte „Aktor“ zeigt je Gerät, ob gerade wirklich geschaltet wird oder nur Probelauf läuft. Die zugrunde gelegte Leistung ist eine Schätzung (Typenschild-Watt), bis eine Shelly-Steckdose sie misst."
+        "content": "**Eine Prioritätsliste, mehrere Geräte:** `COMPUTE_MACHINES` legt die Reihenfolge fest, in der Geräte vom PV-Überschuss profitieren -- wer zuerst in der Liste steht, bekommt zuerst Überschuss zugeteilt. Bei `COMPUTE_MODE=live` wird jedes Gerät mit eingerichtetem Aktor **wirklich geschaltet** (Tuya-Geräte über TUYA_*, Rechner über PC_*_ACTUATOR: `shelly` = SSH-Shutdown + Steckdose trennen, `wol` = SSH-Ruhezustand + Wake-on-LAN; Wärmepumpe `weishaupt`: Warmwasser-Boost auf COMPUTE_DHW_TARGET_C, nur solange das Wasser deutlich darunter liegt) -- ohne eingerichteten Aktor bleibt ein Gerät Probelauf. Die Spalte „Aktor“ zeigt je Gerät, ob gerade wirklich geschaltet wird oder nur Probelauf läuft. Die zugrunde gelegte Leistung ist eine Schätzung (Typenschild-Watt), bis eine Shelly-Steckdose sie misst."
       }
     },
     {
@@ -267,7 +267,7 @@
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 33
+        "y": 36
       },
       "datasource": {
         "type": "redis-datasource",
@@ -419,7 +419,7 @@
         "h": 6,
         "w": 24,
         "x": 0,
-        "y": 44
+        "y": 47
       },
       "datasource": {
         "type": "redis-datasource",
@@ -476,6 +476,13 @@
       },
       "targets": [
         {
+          "refId": "E",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:compute:warmwasser:desired",
+          "legend": "warmwasser"
+        },
+        {
           "refId": "A",
           "type": "timeSeries",
           "command": "ts.range",
@@ -513,7 +520,7 @@
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 50
+        "y": 53
       },
       "datasource": {
         "type": "redis-datasource",
@@ -550,7 +557,7 @@
         "h": 3,
         "w": 3,
         "x": 0,
-        "y": 7
+        "y": 10
       },
       "datasource": {
         "type": "redis-datasource",
@@ -622,7 +629,7 @@
         "h": 3,
         "w": 3,
         "x": 3,
-        "y": 7
+        "y": 10
       },
       "datasource": {
         "type": "redis-datasource",
@@ -695,7 +702,7 @@
         "h": 3,
         "w": 18,
         "x": 6,
-        "y": 7
+        "y": 10
       },
       "datasource": {
         "type": "redis-datasource",
@@ -743,7 +750,7 @@
         "h": 3,
         "w": 3,
         "x": 0,
-        "y": 10
+        "y": 13
       },
       "datasource": {
         "type": "redis-datasource",
@@ -815,7 +822,7 @@
         "h": 3,
         "w": 3,
         "x": 3,
-        "y": 10
+        "y": 13
       },
       "datasource": {
         "type": "redis-datasource",
@@ -888,7 +895,7 @@
         "h": 3,
         "w": 18,
         "x": 6,
-        "y": 10
+        "y": 13
       },
       "datasource": {
         "type": "redis-datasource",
@@ -936,7 +943,7 @@
         "h": 3,
         "w": 3,
         "x": 0,
-        "y": 13
+        "y": 16
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1008,7 +1015,7 @@
         "h": 3,
         "w": 3,
         "x": 3,
-        "y": 13
+        "y": 16
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1081,7 +1088,7 @@
         "h": 3,
         "w": 18,
         "x": 6,
-        "y": 13
+        "y": 16
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1129,7 +1136,7 @@
         "h": 3,
         "w": 3,
         "x": 0,
-        "y": 16
+        "y": 19
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1201,7 +1208,7 @@
         "h": 3,
         "w": 3,
         "x": 3,
-        "y": 16
+        "y": 19
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1274,7 +1281,7 @@
         "h": 3,
         "w": 18,
         "x": 6,
-        "y": 16
+        "y": 19
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1323,7 +1330,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 20
+        "y": 23
       },
       "panels": []
     },
@@ -1336,7 +1343,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 21
+        "y": 24
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1381,7 +1388,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 21
+        "y": 24
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1426,7 +1433,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 21
+        "y": 24
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1465,13 +1472,13 @@
     {
       "id": 34,
       "type": "stat",
-      "title": "notyetknown: Leistung",
+      "title": "zirkulation: Leistung",
       "description": "Noch keinem Gerät in COMPUTE_MACHINES zugeordnet -- wird nur aufgezeichnet.",
       "gridPos": {
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 21
+        "y": 24
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1502,7 +1509,7 @@
           "refId": "A",
           "type": "command",
           "command": "hget",
-          "keyName": "shelly:notyetknown:latest",
+          "keyName": "shelly:zirkulation:latest",
           "field": "power_w"
         }
       ]
@@ -1515,7 +1522,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 25
+        "y": 28
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1578,7 +1585,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "notyetknown"
+              "options": "zirkulation"
             },
             "properties": [
               {
@@ -1627,8 +1634,8 @@
           "refId": "D",
           "type": "timeSeries",
           "command": "ts.range",
-          "keyName": "ts:shelly:notyetknown:power_w",
-          "legend": "notyetknown"
+          "keyName": "ts:shelly:zirkulation:power_w",
+          "legend": "zirkulation"
         }
       ]
     },
@@ -1640,7 +1647,7 @@
         "h": 4,
         "w": 4,
         "x": 0,
-        "y": 59
+        "y": 62
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1685,7 +1692,7 @@
         "h": 4,
         "w": 4,
         "x": 4,
-        "y": 59
+        "y": 62
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1730,7 +1737,7 @@
         "h": 4,
         "w": 4,
         "x": 8,
-        "y": 59
+        "y": 62
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1798,7 +1805,7 @@
         "h": 4,
         "w": 4,
         "x": 12,
-        "y": 59
+        "y": 62
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1866,7 +1873,7 @@
         "h": 4,
         "w": 4,
         "x": 16,
-        "y": 59
+        "y": 62
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1935,7 +1942,7 @@
         "h": 4,
         "w": 4,
         "x": 20,
-        "y": 59
+        "y": 62
       },
       "datasource": {
         "type": "redis-datasource",
@@ -2012,7 +2019,7 @@
         "h": 6,
         "w": 18,
         "x": 0,
-        "y": 63
+        "y": 66
       },
       "datasource": {
         "type": "redis-datasource",
@@ -2082,7 +2089,7 @@
         "h": 6,
         "w": 6,
         "x": 18,
-        "y": 63
+        "y": 66
       },
       "datasource": {
         "type": "redis-datasource",
@@ -2191,12 +2198,205 @@
         "h": 2,
         "w": 24,
         "x": 0,
-        "y": 42
+        "y": 45
       },
       "options": {
         "mode": "markdown",
         "content": "Wetterdaten (Temperatur, Einstrahlung, Bewölkung, Strahlungsprognose): [Weather data by Open-Meteo.com](https://open-meteo.com/), Lizenz [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)"
       }
+    },
+    {
+      "id": 46,
+      "type": "stat",
+      "title": "warmwasser: Soll-Zustand",
+      "gridPos": {
+        "h": 3,
+        "w": 3,
+        "x": 0,
+        "y": 7
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "EIN",
+                  "color": "green",
+                  "index": 0
+                },
+                "0": {
+                  "text": "AUS",
+                  "color": "text",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/"
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "text": {
+          "valueSize": 22
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "compute:warmwasser:latest",
+          "field": "desired"
+        }
+      ]
+    },
+    {
+      "id": 47,
+      "type": "stat",
+      "title": "warmwasser: Aktor",
+      "gridPos": {
+        "h": 3,
+        "w": 3,
+        "x": 3,
+        "y": 7
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "geschaltet",
+                  "color": "orange",
+                  "index": 0
+                },
+                "0": {
+                  "text": "Probelauf",
+                  "color": "text",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/"
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "text": {
+          "valueSize": 22
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "compute:warmwasser:latest",
+          "field": "actuated"
+        }
+      ],
+      "description": "Ob der Warmwasser-Boost wirklich angefordert wird (COMPUTE_MODE=live) oder nur Probelauf ist. Die Modbus-Schreibzugriffe macht weishaupt-poller."
+    },
+    {
+      "id": 48,
+      "type": "stat",
+      "title": "warmwasser: Begründung",
+      "gridPos": {
+        "h": 3,
+        "w": 18,
+        "x": 6,
+        "y": 7
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/"
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "text": {
+          "valueSize": 18
+        },
+        "justifyMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "compute:warmwasser:latest",
+          "field": "reason"
+        }
+      ]
     }
   ]
 }

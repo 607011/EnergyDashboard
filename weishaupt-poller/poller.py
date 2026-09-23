@@ -12,6 +12,14 @@ Things that differ from the SolarEdge poller:
 Writes:
   - a Redis hash        "weishaupt:<name>:latest"  -> most recent values
   - a RedisTimeSeries per numeric field, "ts:weishaupt:<name>:<field>"
+
+Hot-water boost on PV surplus: compute-controller never talks Modbus itself (the heat pump gets
+exactly one client, this one). It puts its wish into "weishaupt:<name>:boost" (active, target_c,
+push_min, deadline_ms), refreshed every minute; this poller carries it out -- raise the DHW
+"Normal" temperature to the target and start a push (a push also overcomes the switching
+hysteresis, tested 2026-09-23) -- and restores the saved Normal temperature once the wish is
+withdrawn *or stops being refreshed* (deadline passed: controller gone). The saved value lives in
+"weishaupt:<name>:boost_state", so a restart of this poller mid-boost still restores it.
 """
 
 import logging
@@ -79,6 +87,15 @@ STALE_AFTER_S = float(os.environ.get("STALE_AFTER_SECONDS", "120"))
 
 MAX_BACKOFF = 60
 MAX_BLOCK = 5  # protocol limit of the heat pump
+
+# Holding registers (read 0x03 / write 0x06), one at a time: this unit doesn't answer a block read.
+HR_DHW_PUSH = 42102    # 0 = off, else minutes (5..235)
+HR_DHW_NORMAL = 42103  # DHW "Normal" temperature, 0.1 degC (a stored setting)
+BOOST_KEY = f"weishaupt:{DEVICE_KEY}:boost"              # the controller's wish
+BOOST_STATE_KEY = f"weishaupt:{DEVICE_KEY}:boost_state"  # ours: saved_normal, date, writes
+# Settings end up in the controller's non-volatile memory: cap the writes for a boost. Restoring
+# the saved value is never held back by this.
+MAX_WRITES_PER_DAY = int(os.environ.get("WEISHAUPT_MAX_WRITES_PER_DAY", "12"))
 
 running = True
 
@@ -207,6 +224,84 @@ def read_values(client: ModbusTcpClient) -> dict:
             if value is not None:
                 values[field] = value
     return values
+
+
+def read_holding(client: ModbusTcpClient, address: int):
+    rr = client.read_holding_registers(address, 1, slave=UNIT)
+    return None if rr.isError() else rr.registers[0]
+
+
+def write_checked(client: ModbusTcpClient, address: int, value: int) -> bool:
+    rr = client.write_register(address, value, slave=UNIT)
+    if rr.isError():
+        log.warning("Writing %d to register %d failed: %s", value, address, rr)
+        return False
+    return read_holding(client, address) == value
+
+
+def boost_plan(wish: dict, state: dict, normal: int | None, push: int | None, now_ms: int, today: str,
+               max_writes: int = MAX_WRITES_PER_DAY) -> tuple[str | None, list, dict]:
+    """What to do for the hot-water boost: (action, [(register, value), ...], new boost_state).
+    action is "start", "extend" (push ran out while still wanted), "restore" or None.
+
+    Pure, so it can be tested without a heat pump. `normal`/`push` are the registers' current raw
+    values (None = unreadable, then nothing is done). The Normal temperature is saved *before* it
+    is raised, and a value at or above the target is never saved (that would be a leftover of an
+    earlier boost -- the value saved last time is restored then).
+    """
+    state = dict(state)
+    if state.get("date") != today:
+        state["date"], state["writes"] = today, "0"
+    writes = int(state.get("writes", 0))
+    try:
+        want = wish.get("active") == "1" and now_ms < int(wish.get("deadline_ms", 0))
+        target = round(float(wish["target_c"]) * 10) if want else None
+        push_min = int(wish.get("push_min", 60))
+    except (KeyError, ValueError):
+        want = False
+    if normal is None or push is None:
+        return None, [], state
+    boosting = "saved_normal" in state
+
+    if want and not boosting:
+        restore_to = normal if normal < target else int(state.get("last_saved_normal", 0))
+        if not restore_to:
+            log.warning("DHW boost: Normal is already %.1f degC and no earlier value is known to "
+                        "restore later -- not boosting", normal / 10)
+            return None, [], state
+        if writes + 2 > max_writes:
+            log.warning("DHW boost: %d setting writes today already, not boosting", writes)
+            return None, [], state
+        state["saved_normal"] = state["last_saved_normal"] = str(restore_to)
+        state["writes"] = str(writes + 2)
+        return "start", [(HR_DHW_NORMAL, target), (HR_DHW_PUSH, push_min)], state
+    if want and boosting and push == 0 and writes < max_writes:
+        state["writes"] = str(writes + 1)
+        return "extend", [(HR_DHW_PUSH, push_min)], state
+    if not want and boosting:
+        saved = int(state["saved_normal"])
+        plan = ([(HR_DHW_NORMAL, saved)] if normal != saved else []) + ([(HR_DHW_PUSH, 0)] if push else [])
+        return "restore", plan, state
+    return None, [], state
+
+
+def apply_boost(client: ModbusTcpClient, r: redis.Redis, values: dict) -> None:
+    """Reads the DHW push/Normal registers into `values` and carries out the controller's boost wish."""
+    push, normal = read_holding(client, HR_DHW_PUSH), read_holding(client, HR_DHW_NORMAL)
+    if push is not None:
+        values["dhw_push_min"] = push
+    if normal is not None:
+        values["dhw_normal_setpoint"] = normal / 10
+    action, plan, state = boost_plan(r.hgetall(BOOST_KEY), r.hgetall(BOOST_STATE_KEY), normal, push,
+                                     int(time.time() * 1000), time.strftime("%Y-%m-%d"))
+    r.hset(BOOST_STATE_KEY, mapping=state)  # saved_normal is stored before anything is written
+    ok = all(write_checked(client, register, value) for register, value in plan)
+    if action:
+        log.info("DHW boost %s: %s%s", action, ", ".join(f"{reg}={val}" for reg, val in plan) or "nothing to write",
+                 "" if ok else " -- FAILED, retrying next poll")
+    if action == "restore" and ok:
+        r.hdel(BOOST_STATE_KEY, "saved_normal")
+    values["dhw_boost_active"] = int(r.hexists(BOOST_STATE_KEY, "saved_normal"))
 
 
 def derive_efficiency(r: redis.Redis) -> tuple[dict, dict]:
@@ -363,6 +458,7 @@ def main() -> None:
             if not client.connect():
                 raise ConnectionError(f"cannot connect to {HOST}:{PORT}")
             values = read_values(client)
+            apply_boost(client, r, values)
             derived, derived_at = derive_efficiency(r)
             values.update(derived)
             log_device(r, values, int(time.time() * 1000), derived_at)
@@ -389,5 +485,46 @@ def main() -> None:
     log.info("Stopped")
 
 
+def selftest() -> bool:
+    failures = 0
+
+    def check(name, ok):
+        nonlocal failures
+        print(("ok   " if ok else "FAIL ") + name)
+        failures += 0 if ok else 1
+
+    day, now = "2026-09-23", 1000
+    wish = {"active": "1", "target_c": "58", "push_min": "120", "deadline_ms": "2000"}
+    off = {**wish, "active": "0"}
+    action, plan, st = boost_plan(wish, {}, 520, 0, now, day)
+    check("Boost-Start: Normal 58 °C + Push, 52 °C gemerkt",
+          action == "start" and plan == [(HR_DHW_NORMAL, 580), (HR_DHW_PUSH, 120)] and st["saved_normal"] == "520")
+    check("Boost läuft: nichts schreiben", boost_plan(wish, st, 580, 120, now, day)[:2] == (None, []))
+    check("Push abgelaufen, Boost noch gewünscht: Push erneuern",
+          boost_plan(wish, st, 580, 0, now, day)[:2] == ("extend", [(HR_DHW_PUSH, 120)]))
+    check("Boost beendet: 52 °C zurück, Push aus",
+          boost_plan(off, st, 580, 90, now, day)[:2] == ("restore", [(HR_DHW_NORMAL, 520), (HR_DHW_PUSH, 0)]))
+    check("Regler meldet sich nicht mehr (Frist vorbei): zurücksetzen",
+          boost_plan(wish, st, 580, 90, 3000, day)[0] == "restore")
+    check("Rücksetzen, obwohl schon alles stimmt: Merker trotzdem löschen",
+          boost_plan(off, st, 520, 0, now, day)[:2] == ("restore", []))
+    leftover = {k: v for k, v in st.items() if k != "saved_normal"}
+    check("Normal steht noch auf 58 °C (Rest): früher gemerkten Wert nehmen",
+          boost_plan(wish, leftover, 580, 0, now, day)[2].get("saved_normal") == "520")
+    check("Normal steht auf 58 °C, kein Rücksetzwert bekannt: kein Boost",
+          boost_plan(wish, {}, 580, 0, now, day)[0] is None)
+    check("Schreiblimit erreicht: kein Boost", boost_plan(wish, {"date": day, "writes": "11"}, 520, 0, now, day)[0] is None)
+    check("Rücksetzen trotz Schreiblimit",
+          boost_plan(off, {"date": day, "writes": "12", "saved_normal": "520"}, 580, 30, now, day)[0] == "restore")
+    check("Register unlesbar: nichts tun", boost_plan(wish, st, None, 0, now, day)[:2] == (None, []))
+    check("neuer Tag: Schreibzähler zurück", boost_plan(wish, {"date": "2026-09-22", "writes": "12"}, 520, 0, now, day)[0] == "start")
+
+    print("Alle Tests bestanden" if failures == 0 else f"{failures} Test(s) fehlgeschlagen")
+    return failures == 0
+
+
 if __name__ == "__main__":
+    import sys
+    if "--selftest" in sys.argv:
+        sys.exit(0 if selftest() else 1)
     main()
