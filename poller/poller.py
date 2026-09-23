@@ -285,18 +285,18 @@ def update_daily_totals(
     if state.get("import_ref_wh", "") == "" and import_wh is not None:
         state["import_ref_wh"] = str(import_wh)
 
-    r.hset(_DAILY_STATE_KEY, mapping=state)
+    # The counters only ever increase: a reading below today's reference is a bad read, not a
+    # negative day. Missing or bad reads keep the last good total instead of dropping to 0.
+    def today_total(counter_wh: float | None, name: str) -> float:
+        ref = state.get(f"{name}_ref_wh", "")
+        if counter_wh is not None and ref and counter_wh >= float(ref):
+            state[f"{name}_today_wh"] = str(counter_wh - float(ref))
+        return float(state.get(f"{name}_today_wh") or 0.0)
 
-    export_today_wh = (
-        export_wh - float(state["export_ref_wh"])
-        if export_wh is not None and state.get("export_ref_wh")
-        else 0.0
-    )
-    import_today_wh = (
-        import_wh - float(state["import_ref_wh"])
-        if import_wh is not None and state.get("import_ref_wh")
-        else 0.0
-    )
+    export_today_wh = today_total(export_wh, "export")
+    import_today_wh = today_total(import_wh, "import")
+
+    r.hset(_DAILY_STATE_KEY, mapping=state)
 
     log_device(
         r,
@@ -435,11 +435,20 @@ def poll_once(inverter: solaredge_modbus.Inverter, r: redis.Redis) -> None:
     meters = inverter.meters()
     known_meter_ids, meters_complete = read_expected(_known_meter_ids[0], meters, "Meter")
     _known_meter_ids[0] = known_meter_ids
+    meter_values = {meter_id: apply_scale_factors(meter) for meter_id, meter in meters.items()}
+    # Now and then (seen around inverter hiccups) the meter answers for a few polls with every
+    # register 0 -- lifetime energy counters included, which a grid meter in service can't read.
+    # Such a read is dropped like a missing meter: logging it would put a 0 W grid flow into the
+    # house balance and a counter reset into today's import/export totals (-25 MWh "today").
+    for meter_id, values in list(meter_values.items()):
+        if values.get("import_energy_active") == 0 and values.get("export_energy_active") == 0:
+            log.warning("Meter %s returned all-zero energy counters, ignoring this read", meter_id)
+            del meter_values[meter_id]
+            meters_complete = False
     meter_power = 0.0 if meters_complete else None
     export_wh = None
     import_wh = None
-    for meter_id, meter in meters.items():
-        values = apply_scale_factors(meter)
+    for meter_id, values in meter_values.items():
         log_device(r, f"meter:{meter_id.lower()}", values, ts_ms)
         if meters_complete and isinstance(values.get("power"), (int, float)):
             meter_power += values["power"]

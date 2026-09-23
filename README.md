@@ -664,3 +664,11 @@ machines' own consumption is not in the history; while it is unknown the control
 0 W, so if a machine actually runs, the true surplus is larger than shown.
 
 `python controller.py --selftest` (in the container) checks the rules, the forecast and the delays.
+
+## Credits
+
+[Weather data by Open-Meteo.com](https://open-meteo.com/) (outside temperature, irradiance and cloud
+cover in the SolarEdge dashboard, the irradiance forecast in `compute-controller`), licensed under
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The license requires this attribution:
+both dashboards that show or use the data carry it in a text line, keep it there when rearranging
+panels.

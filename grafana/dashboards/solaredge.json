@@ -1278,7 +1278,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 56
+        "y": 58
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1323,7 +1323,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 56
+        "y": 58
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1368,7 +1368,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 56
+        "y": 58
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1413,7 +1413,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 56
+        "y": 58
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1458,7 +1458,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 60
+        "y": 62
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1509,6 +1509,22 @@
           "legend": "Bezug"
         }
       ]
+    },
+    {
+      "id": 28,
+      "type": "text",
+      "title": "",
+      "transparent": true,
+      "gridPos": {
+        "h": 2,
+        "w": 24,
+        "x": 0,
+        "y": 56
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Wetterdaten (Temperatur, Einstrahlung, Bewölkung, Strahlungsprognose): [Weather data by Open-Meteo.com](https://open-meteo.com/), Lizenz [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)"
+      }
     }
   ]
 }
