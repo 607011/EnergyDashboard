@@ -438,14 +438,16 @@ def poll_and_actuate_tuya(r, dev: TuyaDevice, machine, want_on: bool, live: bool
     return machine.watts if effective_on else 0.0
 
 
-def actuate_pc(r: redis.Redis, params: "Params", machine: Machine, want_on: bool, live: bool) -> bool:
+def actuate_pc(r: redis.Redis, params: "Params", machine: Machine, want_on: bool, live: bool) -> tuple[bool, bool]:
     """Runs the SSH/Shelly/WoL actions for a "pc" machine with an actuator configured (see
-    pc_actuator.py); does nothing if PC_<NAME>_ACTUATOR isn't set (stays dry-run). Returns whether
-    a shutdown has been sent and is still being waited out (persisted as machine_fields["shutdown_sent"]
-    by the caller, and fed back in as the current `shutdown_sent` on the next cycle).
+    pc_actuator.py); does nothing if PC_<NAME>_ACTUATOR isn't set (stays dry-run). Returns
+    (shutdown_sent, owned): whether a shutdown is still being waited out, and whether the
+    controller itself switched the machine on (it only switches off what it switched on). Both
+    are persisted in compute:<name>:latest by the caller and read back here next cycle.
     """
+    owned = r.hget(f"compute:{machine.name}:latest", "owned") == "1"
     if not machine.pc_actuator_kind:
-        return False
+        return False, owned
     plug = r.hgetall(f"shelly:{machine.name}:latest")
     try:
         plug_fresh = plug and (int(r.hget(f"shelly:{machine.name}:latest", "updated_at") or 0))
@@ -459,17 +461,17 @@ def actuate_pc(r: redis.Redis, params: "Params", machine: Machine, want_on: bool
     shutdown_sent = r.hget(f"compute:{machine.name}:latest", "shutdown_sent") == "1"
 
     if machine.pc_actuator_kind == "shelly":
-        actions = pc_actuator.shelly_pc_actions(want_on, plug_on, power_w, shutdown_sent)
+        actions = pc_actuator.shelly_pc_actions(want_on, plug_on, power_w, shutdown_sent, owned)
     elif machine.pc_actuator_kind == "wol":
-        actions = pc_actuator.wol_pc_actions(want_on, power_w)
+        actions = pc_actuator.wol_pc_actions(want_on, power_w, owned)
     else:
         log.error("%s: unknown PC_%s_ACTUATOR=%r", machine.name, machine.name.upper(), machine.pc_actuator_kind)
-        return shutdown_sent
+        return shutdown_sent, owned
 
     if not actions or not live:
         if actions and not live:
             log.info("%s: would %s (dry run, COMPUTE_MODE != live)", machine.name, ", ".join(actions))
-        return shutdown_sent
+        return shutdown_sent, owned
 
     plug_host = params.shelly_hosts.get(machine.name)
     for action in actions:
@@ -486,11 +488,15 @@ def actuate_pc(r: redis.Redis, params: "Params", machine: Machine, want_on: bool
             elif action == "wol":
                 pc_actuator.send_wol(machine.pc_mac)
             log.info("%s: %s", machine.name, action)
+            if action in ("shelly_on", "wol"):
+                owned = True
+            elif action in ("shelly_off", "ssh_sleep"):
+                owned = False
         except pc_actuator.ActuationError as exc:
             log.warning("%s: %s failed (%s)", machine.name, action, exc)
     if "shelly_off" in actions:
         shutdown_sent = False
-    return shutdown_sent
+    return shutdown_sent, owned
 
 
 def machine_power(r, machine, now_ms):
@@ -670,11 +676,11 @@ def cycle(r, params, forecast, tz, learned, now_ms, tuya_devices=None):
         # "pc" machine with an actuator this runs its SSH/Shelly/WoL steps (its power already
         # feeds back on its own, via shelly-poller writing the same compute:<name>:latest fields).
         power_w = None
-        shutdown_sent = None
+        shutdown_sent = owned = None
         if is_tuya:
             power_w = poll_and_actuate_tuya(r, tuya_devices[name], d.machine, d.on, live, now_ms)
         elif has_pc_actuator:
-            shutdown_sent = actuate_pc(r, params, d.machine, d.on, live)
+            shutdown_sent, owned = actuate_pc(r, params, d.machine, d.on, live)
         machine_fields = {
             "desired": int(d.on), "reason": d.reason, "watts": d.machine.watts,
             "threshold_on_w": d.threshold_on_w, "decided_at": now_ms, "actuated": int(actuated),
@@ -684,6 +690,7 @@ def cycle(r, params, forecast, tz, learned, now_ms, tuya_devices=None):
             machine_fields["power_updated_at"] = now_ms
         if shutdown_sent is not None:
             machine_fields["shutdown_sent"] = int(shutdown_sent)
+            machine_fields["owned"] = int(owned)
         pipe.hset(f"compute:{name}:latest", mapping=machine_fields)
         add(f"ts:compute:{name}:desired", int(d.on))
         add(f"ts:compute:{name}:threshold_on_w", d.threshold_on_w)
@@ -880,6 +887,16 @@ def selftest():
     ms = parse_machines("winola:200", {"PC_WINOLA_ACTUATOR": "shelly", "PC_WINOLA_SSH_HOST": "192.168.0.144", "PC_WINOLA_SSH_USER": "lands"})
     check("PC-Aktor-Konfiguration geparst", ms[0].pc_actuator_kind == "shelly" and ms[0].pc_ssh_host == "192.168.0.144" and ms[0].pc_ssh_user == "lands")
     check("ohne PC_*_ACTUATOR bleibt es Probelauf", parse_machines("winola:200")[0].pc_actuator_kind is None)
+
+    # --- pc actuation: only switch off what the controller itself switched on
+    sa, wa = pc_actuator.shelly_pc_actions, pc_actuator.wol_pc_actions
+    check("Windows-PC einschalten: Steckdose an", sa(True, False, 0.0, False, owned=False) == ["shelly_on"])
+    check("Windows-PC von Hand an, Regler will aus: in Ruhe lassen", sa(False, True, 80.0, False, owned=False) == [])
+    check("Windows-PC vom Regler an, soll aus: SSH-Shutdown", sa(False, True, 80.0, False, owned=True) == ["ssh_shutdown"])
+    check("Shutdown läuft, Leistung niedrig: Steckdose aus", sa(False, True, 3.0, True, owned=True) == ["shelly_off"])
+    check("Mac schläft, soll an: WoL", wa(True, 1.0, owned=False) == ["wol"])
+    check("Mac von Hand wach, Regler will aus: in Ruhe lassen", wa(False, 80.0, owned=False) == [])
+    check("Mac vom Regler geweckt, soll aus: Ruhezustand", wa(False, 80.0, owned=True) == ["ssh_sleep"])
 
     # --- tuya actuation: (re-)send the command on a change or when reality disagrees, not otherwise
     check("Zustand wechselt: senden", tuya_target_state(True, False))

@@ -33,11 +33,14 @@ SHELLY_TIMEOUT_S = 5
 
 # --------------------------------------------------------------------------- pure decision logic
 
-def shelly_pc_actions(desired_on: bool, plug_on: bool | None, power_w: float | None, shutdown_sent: bool) -> list[str]:
+def shelly_pc_actions(desired_on: bool, plug_on: bool | None, power_w: float | None, shutdown_sent: bool,
+                      owned: bool = True) -> list[str]:
     """What to do for a "shelly"-method PC. Returns a subset of ["shelly_on", "ssh_shutdown",
     "shelly_off"], in the order they'd need doing (there's always at most one meaningful action
     here since each step waits for the last one's effect before proceeding).
 
+    `owned`: the controller itself switched this PC on. It only ever switches off a PC it switched
+    on -- one a person started by hand is left alone, even while the controller wants it off.
     Unknown plug state means "don't know what's safe" -> do nothing rather than guess.
     """
     if plug_on is None:
@@ -46,6 +49,8 @@ def shelly_pc_actions(desired_on: bool, plug_on: bool | None, power_w: float | N
         return [] if plug_on else ["shelly_on"]
     if not plug_on:
         return []  # already off
+    if not owned:
+        return []
     if power_w is None:
         return []
     if power_w > POWER_THRESHOLD_W:
@@ -53,14 +58,17 @@ def shelly_pc_actions(desired_on: bool, plug_on: bool | None, power_w: float | N
     return ["shelly_off"]  # shutdown has visibly finished
 
 
-def wol_pc_actions(desired_on: bool, power_w: float | None) -> list[str]:
-    """What to do for a "wol"-method PC (the Mac). Returns a subset of ["wol", "ssh_sleep"]."""
+def wol_pc_actions(desired_on: bool, power_w: float | None, owned: bool = True) -> list[str]:
+    """What to do for a "wol"-method PC (the Mac). Returns a subset of ["wol", "ssh_sleep"].
+
+    `owned` as for shelly_pc_actions: only a machine the controller woke is put back to sleep.
+    """
     if power_w is None:
         return []
     awake = power_w > POWER_THRESHOLD_W
     if desired_on and not awake:
         return ["wol"]
-    if not desired_on and awake:
+    if not desired_on and awake and owned:
         return ["ssh_sleep"]
     return []
 
