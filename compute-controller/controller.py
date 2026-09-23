@@ -484,9 +484,17 @@ def actuate_pc(r: redis.Redis, params: "Params", machine: Machine, want_on: bool
                 pc_actuator.ssh_run(machine.pc_ssh_host, machine.pc_ssh_user, params.pc_ssh_key, "shutdown /s /t 0")
                 shutdown_sent = True
             elif action == "ssh_sleep":
-                pc_actuator.ssh_run(machine.pc_ssh_host, machine.pc_ssh_user, params.pc_ssh_key, "pmset sleepnow")
+                pc_actuator.ssh_run(machine.pc_ssh_host, machine.pc_ssh_user, params.pc_ssh_key, pc_actuator.MAC_SLEEP)
             elif action == "wol":
                 pc_actuator.send_wol(machine.pc_mac)
+                owned = True  # the packet is out; the full-wake step below is retried next cycle if it fails
+                time.sleep(pc_actuator.WOL_SETTLE_S)
+                pc_actuator.ssh_run(machine.pc_ssh_host, machine.pc_ssh_user, params.pc_ssh_key,
+                                    pc_actuator.MAC_FULL_WAKE, wait=True)
+            elif action == "keep_awake":
+                pc_actuator.ssh_run(machine.pc_ssh_host, machine.pc_ssh_user, params.pc_ssh_key,
+                                    pc_actuator.MAC_KEEP_AWAKE, wait=True)
+                continue  # runs every cycle, not worth a log line
             log.info("%s: %s", machine.name, action)
             if action in ("shelly_on", "wol"):
                 owned = True
@@ -886,7 +894,7 @@ def selftest():
     check("Shelly-Hosts parsen", parse_shelly_hosts("gamer:192.168.0.162, winola:192.168.0.208") == {"gamer": "192.168.0.162", "winola": "192.168.0.208"})
     ms = parse_machines("winola:200", {"PC_WINOLA_ACTUATOR": "shelly", "PC_WINOLA_SSH_HOST": "192.168.0.144", "PC_WINOLA_SSH_USER": "lands"})
     check("PC-Aktor-Konfiguration geparst", ms[0].pc_actuator_kind == "shelly" and ms[0].pc_ssh_host == "192.168.0.144" and ms[0].pc_ssh_user == "lands")
-    check("ohne PC_*_ACTUATOR bleibt es Probelauf", parse_machines("winola:200")[0].pc_actuator_kind is None)
+    check("ohne PC_*_ACTUATOR bleibt es Probelauf", parse_machines("winola:200", {})[0].pc_actuator_kind is None)
 
     # --- pc actuation: only switch off what the controller itself switched on
     sa, wa = pc_actuator.shelly_pc_actions, pc_actuator.wol_pc_actions
@@ -897,6 +905,8 @@ def selftest():
     check("Mac schläft, soll an: WoL", wa(True, 1.0, owned=False) == ["wol"])
     check("Mac von Hand wach, Regler will aus: in Ruhe lassen", wa(False, 80.0, owned=False) == [])
     check("Mac vom Regler geweckt, soll aus: Ruhezustand", wa(False, 80.0, owned=True) == ["ssh_sleep"])
+    check("Mac vom Regler geweckt, soll an: wach halten", wa(True, 80.0, owned=True) == ["keep_awake"])
+    check("Mac von Hand wach, soll an: eigenes Ruheverhalten behalten", wa(True, 80.0, owned=False) == [])
 
     # --- tuya actuation: (re-)send the command on a change or when reality disagrees, not otherwise
     check("Zustand wechselt: senden", tuya_target_state(True, False))
