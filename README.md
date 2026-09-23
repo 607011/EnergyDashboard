@@ -333,14 +333,17 @@ loading within ~5 minutes even at 3.5 K below the setpoint, without the electric
   at most `COMPUTE_DHW_MAX_PER_DAY` (2) boosts a day, in its place in the priority queue like any
   other load (same surplus, forecast and battery rules). Without that demand it is "idle" and
   reserves nothing, so it doesn't take surplus away from the machines behind it.
-- **Until:** the target is reached, the surplus goes (after the usual off-delay), or an electric
-  heater comes on -- then the boost stops and none runs again that day (surplus through a heating
-  rod is the one thing not to do).
+- **Until:** the target is reached, the surplus goes (after the usual off-delay), an electric
+  heater comes on (surplus through a heating rod is the one thing not to do) or the heat pump
+  raises any warning -- in the last two cases no boost runs again that day.
+- **How hot:** 55 degC by default. On 2026-09-23 a manual boost to 58 degC tripped the WGB 14's
+  high-pressure switch at 58.5 degC (warning 15, heat pump locked for a while) -- a known issue of
+  this unit as the water nears its 60 degC maximum, so keep a margin.
 - **Who writes:** only `weishaupt-poller`, the heat pump's sole Modbus client. The controller puts
   its wish into `weishaupt:<name>:boost` with a 10-minute deadline, renewed every minute. The poller
   saves the Normal temperature *before* raising it (`weishaupt:<name>:boost_state`) and restores it
   when the wish ends or its deadline passes, so a crashed controller or a restarted poller can't
-  leave the heat pump at 58 degC. Setting writes are capped at `WEISHAUPT_MAX_WRITES_PER_DAY`
+  leave the heat pump at the boost temperature. Setting writes are capped at `WEISHAUPT_MAX_WRITES_PER_DAY`
   (12); restoring is never held back. `python poller.py --selftest` checks this logic.
 - **Circulation pump:** `COMPUTE_DHW_CIRCULATION` names the Shelly of the hot-water circulation
   pump (in `SHELLY_DEVICES`); while boosting it is switched on with a 10-minute timer of its own,

@@ -113,7 +113,8 @@ class Params:
     shelly_hosts: dict = None  # name -> host, from SHELLY_DEVICES (for the "shelly" pc actuator)
     # "weishaupt" hot-water boost
     weishaupt_name: str = "wgb14"      # weishaupt-poller's WEISHAUPT_NAME
-    dhw_target_c: float = 58.0         # boost the hot water to this ...
+    dhw_target_c: float = 55.0         # boost the hot water to this (a WGB 14 trips its high-pressure
+                                       # switch, warning 15, as the water nears 60 degC: 58.5 did) ...
     dhw_start_delta_k: float = 5.0     # ... once it's at least this far below it
     dhw_max_per_day: int = 2           # boosts started per day (each writes stored settings)
     dhw_push_min: int = 120
@@ -177,7 +178,7 @@ def params_from_env(env=os.environ) -> Params:
         pc_ssh_key=env.get("PC_SSH_KEY_PATH", "/run/secrets/pc_ssh_key"),
         shelly_hosts=parse_shelly_hosts(env.get("SHELLY_DEVICES", "")),
         weishaupt_name=env.get("WEISHAUPT_NAME", "wgb14"),
-        dhw_target_c=f("COMPUTE_DHW_TARGET_C", 58),
+        dhw_target_c=f("COMPUTE_DHW_TARGET_C", 55),
         dhw_start_delta_k=f("COMPUTE_DHW_START_DELTA_K", 5),
         dhw_max_per_day=int(f("COMPUTE_DHW_MAX_PER_DAY", 2)),
         dhw_push_min=int(f("COMPUTE_DHW_PUSH_MIN", 120)),
@@ -267,7 +268,8 @@ def dhw_idle_reason(wp: dict, dhw_state: dict, boosting: bool, params: "Params",
     wp: weishaupt:<name>:latest; dhw_state: compute:<name>:dhw (date, starts, blocked).
     A running boost continues until the target is reached; a new one only starts once the water
     has cooled to target - start_delta, at most dhw_max_per_day times a day, and never again on a
-    day an electric heater came on during one (burning surplus at COP 1 is exactly what not to do).
+    day an electric heater came on during one (burning surplus at COP 1 is exactly what not to do)
+    or the heat pump raised a warning (e.g. 15, high-pressure switch: the water got too hot for it).
     """
     try:
         fresh = now_ms - int(wp.get("updated_at", 0)) <= WEISHAUPT_STALE_MS
@@ -280,9 +282,12 @@ def dhw_idle_reason(wp: dict, dhw_state: dict, boosting: bool, params: "Params",
         return "Wärmepumpe meldet eine Störung"
     today_state = dhw_state if dhw_state.get("date") == today else {}
     if today_state.get("blocked") == "1":
-        return "Heizstab lief während eines Boosts – heute kein Boost mehr"
+        return "Heizstab oder Warnung während eines Boosts – heute kein Boost mehr"
     if boosting and (wp.get("heater1_on") == "1" or wp.get("heater2_on") == "1"):
         return "Heizstab eingeschaltet – Boost abgebrochen"
+    if wp.get("warning_code") not in (None, ""):
+        return (f"Wärmepumpe meldet Warnung {wp['warning_code']}"
+                + (" – Boost abgebrochen" if boosting else ""))
     target = params.dhw_target_c
     if boosting:
         return f"Ziel {target:.0f} °C erreicht ({dhw:.1f} °C)" if dhw >= target else None
@@ -742,7 +747,7 @@ def cycle(r, params, forecast, tz, learned, now_ms, tuya_devices=None):
         reason = dhw_idle_reason(wp, dhw_state, states[m.name].on, params, now_ms, today)
         if reason:
             idle[m.name] = reason
-        if reason and reason.startswith("Heizstab eingeschaltet"):
+        if reason and reason.endswith("Boost abgebrochen"):
             starts = dhw_state.get("starts", 0) if dhw_state.get("date") == today else 0
             r.hset(f"compute:{m.name}:dhw", mapping={"date": today, "starts": starts, "blocked": 1})
 
@@ -939,14 +944,17 @@ def selftest():
     check("Warmwasser ohne Bedarf: aus, reserviert nichts, Rechner startet", not dw["ww"].on and dw["a"].on)
     dw = decide(PW.machines[:1], {"ww": State(True, T - MINUTE_MS)}, Inputs(True, 5000, 5000, 90.0, idle={"ww": "Ziel erreicht"}), PW, T)[0]
     check("Boost am Ziel: sofort aus, trotz Mindestlaufzeit", not dw.on and dw.changed)
-    wp = {"updated_at": str(T), "dhw_temp": "50.0", "fault_free": "1", "heater1_on": "0", "heater2_on": "0"}
+    wp = {"updated_at": str(T), "dhw_temp": "45.0", "fault_free": "1", "heater1_on": "0", "heater2_on": "0"}
     today = "2026-09-23"
     PD = Params(machines=[])
-    check("Warmwasser 50 °C (< 53): Boost möglich", dhw_idle_reason(wp, {}, False, PD, T, today) is None)
-    check("Warmwasser 55 °C: kein neuer Boost", "erst unter 53.0" in dhw_idle_reason({**wp, "dhw_temp": "55.0"}, {}, False, PD, T, today))
-    check("laufender Boost bei 55 °C: weiter", dhw_idle_reason({**wp, "dhw_temp": "55.0"}, {}, True, PD, T, today) is None)
-    check("laufender Boost bei 58 °C: Ziel erreicht", "erreicht" in dhw_idle_reason({**wp, "dhw_temp": "58.0"}, {}, True, PD, T, today))
-    check("Heizstab während Boost: Abbruch", "Heizstab" in dhw_idle_reason({**wp, "heater1_on": "1"}, {}, True, PD, T, today))
+    check("Warmwasser 45 °C (< 50): Boost möglich", dhw_idle_reason({**wp, "dhw_temp": "45.0"}, {}, False, PD, T, today) is None)
+    check("Warmwasser 52 °C: kein neuer Boost", "erst unter 50.0" in dhw_idle_reason({**wp, "dhw_temp": "52.0"}, {}, False, PD, T, today))
+    check("laufender Boost bei 52 °C: weiter", dhw_idle_reason({**wp, "dhw_temp": "52.0"}, {}, True, PD, T, today) is None)
+    check("laufender Boost bei 55 °C: Ziel erreicht", "erreicht" in dhw_idle_reason({**wp, "dhw_temp": "55.0"}, {}, True, PD, T, today))
+    check("Heizstab während Boost: Abbruch", dhw_idle_reason({**wp, "heater1_on": "1"}, {}, True, PD, T, today).endswith("Boost abgebrochen"))
+    check("Warnung (z. B. 15, Hochdruck) während Boost: Abbruch",
+          dhw_idle_reason({**wp, "warning_code": "15"}, {}, True, PD, T, today).endswith("Boost abgebrochen"))
+    check("Warnung ohne Boost: keiner startet", "Warnung 15" in dhw_idle_reason({**wp, "warning_code": "15"}, {}, False, PD, T, today))
     check("nach Heizstab-Abbruch heute gesperrt", "heute kein Boost" in dhw_idle_reason(wp, {"date": today, "blocked": "1"}, False, PD, T, today))
     check("Sperre gilt nur für den Tag", dhw_idle_reason(wp, {"date": "2026-09-22", "blocked": "1"}, False, PD, T, today) is None)
     check("zwei Boosts heute: kein dritter", "heute schon 2" in dhw_idle_reason(wp, {"date": today, "starts": "2"}, False, PD, T, today))
