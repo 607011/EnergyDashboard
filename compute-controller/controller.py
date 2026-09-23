@@ -46,7 +46,7 @@ import statistics
 import sys
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import redis
@@ -95,6 +95,10 @@ class Params:
     soc_min: float = 40.0           # below this, stop immediately
     soc_fc_off: float = 95.0        # a bad forecast only stops machines while the battery is below this
     w_per_wm2: float = 10.0         # fallback conversion irradiance -> PV power (learned if enough data)
+    battery_full_by_hour: float = 12.0   # try to have the battery full by then (local time) ...
+    battery_max_charge_w: float = 2500.0 # ... it can't absorb more than this; the rest is exported
+    battery_capacity_wh: float | None = None  # None = read from the battery (maximum_energy)
+    forecast_derate: float = 0.8         # safety factor on the irradiance -> PV power forecast
     pc_ssh_key: str = "/run/secrets/pc_ssh_key"  # private key for "pc" actuation over SSH
     shelly_hosts: dict = None  # name -> host, from SHELLY_DEVICES (for the "shelly" pc actuator)
 
@@ -149,6 +153,10 @@ def params_from_env(env=os.environ) -> Params:
         soc_min=f("COMPUTE_SOC_MIN", 40),
         soc_fc_off=f("COMPUTE_SOC_FC_OFF", 95),
         w_per_wm2=f("COMPUTE_W_PER_WM2", 10),
+        battery_full_by_hour=f("COMPUTE_BATTERY_FULL_BY_HOUR", 12),
+        battery_max_charge_w=f("COMPUTE_BATTERY_MAX_CHARGE_W", 2500),
+        battery_capacity_wh=float(env["COMPUTE_BATTERY_CAPACITY_WH"]) if env.get("COMPUTE_BATTERY_CAPACITY_WH") else None,
+        forecast_derate=f("COMPUTE_FORECAST_DERATE", 0.8),
         pc_ssh_key=env.get("PC_SSH_KEY_PATH", "/run/secrets/pc_ssh_key"),
         shelly_hosts=parse_shelly_hosts(env.get("SHELLY_DEVICES", "")),
     )
@@ -199,6 +207,10 @@ class Inputs:
     headroom_w: float | None       # PV minus house consumption without the machines
     forecast_headroom_w: float | None
     soc: float | None
+    battery_w: float | None = None  # signed battery power, + charging / - discharging
+    # load_w -> (ok, text): may this much machine load take surplus away from the battery and it
+    # still gets full by the deadline (see battery_budget)? None = no forecast, fall back to soc_on.
+    budget: object = None
 
 
 @dataclass
@@ -218,19 +230,29 @@ class Decision:
     pending_ms: int = 0            # new value for State.pending_ms
 
 
-def decide(machines, states, inputs: Inputs, params: Params, now_ms: int):
-    """Desired state per machine, in priority order (cumulative load decides who runs).
+DISCHARGING_W = 50.0  # battery power below minus this counts as "discharging"
 
-    A change needs its condition to hold for on_delay_min / off_delay_min first (clouds pass, the
-    battery bridges short dips), on top of the minimum on and off times.
+
+def decide(machines, states, inputs: Inputs, params: Params, now_ms: int):
+    """Desired state per machine, in priority order.
+
+    Priority with fill-in: a machine's load is counted on top of the higher-priority machines
+    that run or are about to start (waiting out their on-delay) -- those keep their claim. A
+    higher-priority machine that doesn't fit at all doesn't block a smaller one further down.
+
+    Starting needs the surplus to cover the load plus a margin *and* the battery budget to allow
+    it: with a forecast, the battery must still get full by the deadline despite the load (see
+    battery_budget); without one, the old fixed soc_on threshold applies instead. A change needs
+    its condition to hold for on_delay_min / off_delay_min first, on top of the minimum on and off
+    times. The soc_min emergency stop only fires while the battery is actually discharging.
     """
     decisions = []
-    cumulative = 0.0
+    reserved = 0.0
     for machine in machines:
-        cumulative += machine.watts
+        load = reserved + machine.watts
         state = states.get(machine.name) or State(False, 0, 0)
-        on_threshold = cumulative + params.margin_on_w
-        off_threshold = cumulative - params.tolerance_off_w
+        on_threshold = load + params.margin_on_w
+        off_threshold = load - params.tolerance_off_w
         age_min = (now_ms - state.since_ms) / MINUTE_MS
 
         def result(on, reason, pending=0):
@@ -245,40 +267,84 @@ def decide(machines, states, inputs: Inputs, params: Params, now_ms: int):
             return result(state.on, f"{reason} – abwarten ({waited:.0f} von {delay_min:.0f} min)", since)
 
         if not inputs.complete or inputs.headroom_w is None:
-            decisions.append(result(state.on, "keine Entscheidung: Erzeugungs- oder Verbrauchsdaten unvollständig",
-                                    state.pending_ms))
-            continue
-        h, fc, soc = inputs.headroom_w, inputs.forecast_headroom_w, inputs.soc
-
-        if state.on:
-            if soc is not None and soc < params.soc_min:
-                decisions.append(result(False, f"Batterie {soc:.0f} % unter {params.soc_min:.0f} %"))
-            elif age_min < params.min_on_min:
-                decisions.append(result(True, f"läuft, Mindestlaufzeit ({age_min:.0f} von {params.min_on_min:.0f} min)"))
-            elif h < off_threshold:
-                decisions.append(after_delay(False, f"Überschuss {h:.0f} W deckt {cumulative:.0f} W nicht mehr",
-                                             params.off_delay_min))
-            elif fc is not None and fc < off_threshold and (soc is None or soc < params.soc_fc_off):
-                decisions.append(after_delay(False, f"Prognose {fc:.0f} W reicht nicht, Batterie "
-                                             + (f"{soc:.0f} %" if soc is not None else "unbekannt")
-                                             + " (Entladung droht)", params.off_delay_min))
-            else:
-                decisions.append(result(True, f"läuft: Überschuss {h:.0f} W ≥ {off_threshold:.0f} W"))
+            d = result(state.on, "keine Entscheidung: Erzeugungs- oder Verbrauchsdaten unvollständig",
+                       state.pending_ms)
         else:
-            if age_min < params.min_off_min and state.since_ms > 0:
-                decisions.append(result(False, f"aus, Mindestpause ({age_min:.0f} von {params.min_off_min:.0f} min)"))
-            elif h < on_threshold:
-                decisions.append(result(False, f"Überschuss {h:.0f} W unter {on_threshold:.0f} W"))
-            elif soc is None or soc < params.soc_on:
-                decisions.append(result(False, "Batterie nicht bekannt" if soc is None
-                                        else f"Batterie {soc:.0f} % unter {params.soc_on:.0f} %"))
-            elif fc is not None and fc < cumulative:
-                decisions.append(result(False, f"Prognose {fc:.0f} W reicht für {cumulative:.0f} W nicht"))
+            h, fc, soc = inputs.headroom_w, inputs.forecast_headroom_w, inputs.soc
+            discharging = inputs.battery_w is not None and inputs.battery_w < -DISCHARGING_W
+            budget = inputs.budget(load) if inputs.budget else None
+            if state.on:
+                if soc is not None and soc < params.soc_min and discharging:
+                    d = result(False, f"Batterie {soc:.0f} % unter {params.soc_min:.0f} % und entlädt")
+                elif age_min < params.min_on_min:
+                    d = result(True, f"läuft, Mindestlaufzeit ({age_min:.0f} von {params.min_on_min:.0f} min)")
+                elif h < off_threshold:
+                    d = after_delay(False, f"Überschuss {h:.0f} W deckt {load:.0f} W nicht mehr", params.off_delay_min)
+                elif budget is not None and not budget[0]:
+                    d = after_delay(False, f"{budget[1]} – Batterie hat Vorrang", params.off_delay_min)
+                elif budget is None and fc is not None and fc < off_threshold and (soc is None or soc < params.soc_fc_off):
+                    d = after_delay(False, f"Prognose {fc:.0f} W reicht nicht, Batterie "
+                                    + (f"{soc:.0f} %" if soc is not None else "unbekannt")
+                                    + " (Entladung droht)", params.off_delay_min)
+                else:
+                    d = result(True, f"läuft: Überschuss {h:.0f} W ≥ {off_threshold:.0f} W"
+                               + (f"; {budget[1]}" if budget else ""))
             else:
-                extra = "" if fc is None else f", Prognose {fc:.0f} W"
-                decisions.append(after_delay(True, f"Überschuss {h:.0f} W ≥ {on_threshold:.0f} W, Batterie {soc:.0f} %{extra}",
-                                             params.on_delay_min))
+                if age_min < params.min_off_min and state.since_ms > 0:
+                    d = result(False, f"aus, Mindestpause ({age_min:.0f} von {params.min_off_min:.0f} min)")
+                elif h < on_threshold:
+                    d = result(False, f"Überschuss {h:.0f} W unter {on_threshold:.0f} W")
+                elif budget is not None and not budget[0]:
+                    d = result(False, f"{budget[1]} – Batterie hat Vorrang")
+                elif budget is None and (soc is None or soc < params.soc_on):
+                    d = result(False, "Batterie nicht bekannt" if soc is None
+                               else f"Batterie {soc:.0f} % unter {params.soc_on:.0f} %")
+                elif fc is not None and fc < load:
+                    d = result(False, f"Prognose {fc:.0f} W reicht für {load:.0f} W nicht")
+                else:
+                    detail = budget[1] if budget else f"Batterie {soc:.0f} %"
+                    d = after_delay(True, f"Überschuss {h:.0f} W ≥ {on_threshold:.0f} W; {detail}", params.on_delay_min)
+        decisions.append(d)
+        if d.on or (not state.on and d.pending_ms):
+            reserved += machine.watts
     return decisions
+
+
+def battery_budget(hourly, now_s, soft_deadline_s, day_end_s, soc, capacity_wh, max_charge_w, house_w,
+                   w_per_wm2, derate, soft_label="12:00"):
+    """Whether machines may take surplus away from the battery, from today's irradiance forecast.
+
+    Returns load_w -> (ok, text), or None without the needed inputs. The battery can charge from
+    the forecast surplus (derate * w_per_wm2 * irradiance - house - load), but never faster than
+    max_charge_w -- whatever is above that is exported anyway and free for the machines. `ok` means
+    the battery still gets full by the deadline with this load running all the way: the soft
+    deadline (noon) if the battery could make that at all, otherwise the end of the day.
+    """
+    if soc is None or not capacity_wh or house_w is None or not hourly:
+        return None
+    need = max(0.0, (100.0 - soc) / 100.0 * capacity_wh)
+
+    def achievable(load, until):
+        total = 0.0
+        for t_end, ghi in hourly:
+            if ghi is None:
+                continue
+            start, end = max(now_s, t_end - HOUR_S), min(until, t_end)
+            if end <= start:
+                continue
+            surplus = derate * w_per_wm2 * ghi - house_w - load
+            total += min(max(surplus, 0.0), max_charge_w) * (end - start) / HOUR_S
+        return total
+
+    soft = now_s < soft_deadline_s and achievable(0.0, soft_deadline_s) >= need
+    until, label = (soft_deadline_s, soft_label) if soft else (day_end_s, "Abend")
+
+    def check(load):
+        if need <= 0:
+            return True, "Batterie voll"
+        got = achievable(load, until)
+        return got >= need, f"Batterie {soc:.0f} %, bis {label} {got / 1000:.1f} von {need / 1000:.1f} kWh"
+    return check
 
 
 # --------------------------------------------------------------------------- data access
@@ -520,8 +586,15 @@ def cycle(r, params, forecast, tz, learned, now_ms, tuya_devices=None):
     headroom = pv - (house - machines_w) if complete else None
     baseline_house = (house_60 - machines_w) if house_60 is not None else None
 
-    soc_raw = r.hget(BATTERY_KEY, "soe")
-    soc = float(soc_raw) if soc_raw not in (None, "") else None
+    battery = r.hgetall(BATTERY_KEY)
+    def num(field):
+        try:
+            return float(battery[field]) if battery.get(field) not in (None, "") else None
+        except ValueError:
+            return None
+    soc = num("soe")
+    battery_w = num("instantaneous_power")
+    capacity_wh = params.battery_capacity_wh or num("maximum_energy") or num("rated_energy")
 
     # forecast of the headroom over the next hour
     hourly = forecast.get()
@@ -539,7 +612,16 @@ def cycle(r, params, forecast, tz, learned, now_ms, tuya_devices=None):
         states[m.name] = (State(h.get("on") == "1", int(h.get("since_ms", 0)), int(h.get("pending_ms", 0)))
                           if h else State(False, 0, 0))
 
-    inputs = Inputs(complete, headroom, forecast_headroom, soc)
+    local_now = datetime.fromtimestamp(now_s, tz)
+    midnight = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+    soft_deadline = midnight.timestamp() + params.battery_full_by_hour * HOUR_S
+    day_end = (midnight + timedelta(days=1)).timestamp()
+    soft_label = f"{int(params.battery_full_by_hour):02d}:{int(params.battery_full_by_hour % 1 * 60):02d}"
+    budget = battery_budget(hourly, now_s, soft_deadline, day_end, soc, capacity_wh, params.battery_max_charge_w,
+                            baseline_house, learned, params.forecast_derate, soft_label)
+    base_budget = budget(0.0) if budget else None
+
+    inputs = Inputs(complete, headroom, forecast_headroom, soc, battery_w, budget)
     decisions = decide(params.machines, states, inputs, params, now_ms)
 
     pipe = r.pipeline(transaction=False)
@@ -556,6 +638,7 @@ def cycle(r, params, forecast, tz, learned, now_ms, tuya_devices=None):
         "headroom_w": fmt(headroom), "forecast_headroom_w": fmt(forecast_headroom),
         "forecast_pv_w": fmt(pv_forecast), "forecast_irradiance_next": fmt(f_next), "forecast_irradiance_last": fmt(f_ref),
         "soc": fmt(soc), "w_per_wm2": fmt(learned, 1), "updated_at": now_ms,
+        "battery_budget": base_budget[1] if base_budget else "",
     }
     pipe.delete("compute:latest")
     pipe.hset("compute:latest", mapping=latest)
@@ -687,8 +770,8 @@ def selftest():
                min_on_min=30, min_off_min=30)
     T = 10_000_000_000
     long_ago = T - 10 * 3600 * 1000
-    def inp(h, fc=None, soc=90.0, complete=True):
-        return Inputs(complete, h, fc, soc)
+    def inp(h, fc=None, soc=90.0, complete=True, battery_w=None, budget=None):
+        return Inputs(complete, h, fc, soc, battery_w, budget)
     def run(states, i):
         return {d.machine.name: d for d in decide(P.machines, states, i, P, T)}
 
@@ -722,7 +805,10 @@ def selftest():
     check("schlechte Prognose bei fast voller Batterie: läuft weiter", d["a"].on and d["b"].on)
     fresh_on = {"a": State(True, T - 5 * MINUTE_MS)}
     check("Mindestlaufzeit hält, auch bei wenig Überschuss", decide(P1.machines, fresh_on, inp(-500, None), P1, T)[0].on)
-    check("Batterie unter Minimum stoppt trotz Mindestlaufzeit", not decide(P1.machines, fresh_on, inp(900, 900, soc=30), P1, T)[0].on)
+    check("Batterie unter Minimum stoppt trotz Mindestlaufzeit, wenn sie entlädt",
+          not decide(P1.machines, fresh_on, inp(900, 900, soc=30, battery_w=-300), P1, T)[0].on)
+    check("Batterie unter Minimum, lädt aber: kein Notstopp",
+          decide(P1.machines, fresh_on, inp(900, 900, soc=30, battery_w=1000), P1, T)[0].on)
     d = run(on, inp(None, None, complete=False))
     check("unvollständige Daten: Zustand bleibt", d["a"].on and d["b"].on and not d["a"].changed)
     d = run(off, inp(None, None, complete=False))
@@ -745,7 +831,44 @@ def selftest():
     on_state = {"a": State(True, long_ago, T)}
     check("nach 20 min stoppt er", not decide(PD.machines, on_state, inp(0, 900), PD, T + 20 * MINUTE_MS)[0].on)
     check("Batterie unter Minimum stoppt ohne Wartezeit",
-          not decide(PD.machines, {"a": State(True, long_ago, 0)}, inp(900, 900, soc=30), PD, T)[0].on)
+          not decide(PD.machines, {"a": State(True, long_ago, 0)}, inp(900, 900, soc=30, battery_w=-300), PD, T)[0].on)
+
+    # --- priority with fill-in
+    PB = Params(machines=[Machine("big", 700), Machine("small", 200)], on_delay_min=0, off_delay_min=0,
+                min_on_min=30, min_off_min=30)
+    d = {x.machine.name: x for x in decide(PB.machines, {"big": State(False, long_ago), "small": State(False, long_ago)},
+                                            inp(450, 800), PB, T)}
+    check("großes Gerät passt nicht, kleines darf nachrücken", not d["big"].on and d["small"].on)
+    PBD = Params(machines=[Machine("big", 700), Machine("small", 200)], on_delay_min=15, off_delay_min=0,
+                 min_on_min=30, min_off_min=30)
+    d = {x.machine.name: x for x in decide(PBD.machines, {"big": State(False, long_ago), "small": State(False, long_ago)},
+                                            inp(1000, 2000), PBD, T)}
+    check("wartendes Gerät mit Vorrang behält seinen Anspruch", d["big"].pending_ms == T and not d["small"].pending_ms)
+
+    # --- battery budget decides instead of a fixed soc_on
+    ok_budget = lambda load: (True, "ok")
+    no_budget = lambda load: (False, "zu wenig")
+    check("Budget reicht: Start trotz 23 % Batterie",
+          decide(P1.machines, {"a": State(False, long_ago)}, inp(900, 900, soc=23, budget=ok_budget), P1, T)[0].on)
+    d = decide(P1.machines, {"a": State(False, long_ago)}, inp(900, 900, soc=95, budget=no_budget), P1, T)[0]
+    check("Budget reicht nicht: kein Start, auch bei 95 %", not d.on and "Vorrang" in d.reason)
+    check("Budget reicht nicht mehr: läuft aus",
+          not decide(P1.machines, {"a": State(True, long_ago)}, inp(900, 900, soc=50, budget=no_budget), P1, T)[0].on)
+
+    H = HOUR_S
+    sunny = [(t * H, 500.0) for t in range(8, 19)]   # 500 W/m² from 7:00 to 18:00 (hour ending at t)
+    # 10 W per W/m², derate 1: 5000 W PV, 100 W house -> 4900 W surplus, capped at 2500 W charging
+    b = battery_budget(sunny, 8 * H, 12 * H, 24 * H, soc=50, capacity_wh=10000, max_charge_w=2500,
+                       house_w=100, w_per_wm2=10, derate=1.0)
+    check("Budget: 4 h × 2500 W reichen für 5 kWh bis Mittag", b(0)[0] and "12:00" in b(0)[1])
+    check("Budget: Last unterhalb der Ladeleistung-Kappung kostet nichts", b(2400)[0])
+    check("Budget: große Last macht Mittag unmöglich", not b(4000)[0])
+    b2 = battery_budget(sunny, 8 * H, 12 * H, 24 * H, soc=0, capacity_wh=20000, max_charge_w=2500,
+                        house_w=100, w_per_wm2=10, derate=1.0)
+    check("Budget: Mittag nicht erreichbar -> Frist Abend", "Abend" in b2(0)[1] and b2(0)[0])
+    check("Budget: volle Batterie braucht nichts",
+          battery_budget(sunny, 8 * H, 12 * H, 24 * H, 100, 10000, 2500, 100, 10, 1.0)(9999)[0])
+    check("Budget: ohne Prognose keine Aussage", battery_budget([], 8 * H, 12 * H, 24 * H, 50, 10000, 2500, 100, 10, 1.0) is None)
 
     # --- config
     check("Rechner-Konfiguration", [(m.name, m.watts) for m in parse_machines("winola:200, gamer:250")] == [("winola", 200), ("gamer", 250)])

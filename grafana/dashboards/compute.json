@@ -7,7 +7,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 8,
+  "version": 9,
   "refresh": "1m",
   "graphTooltip": 2,
   "time": {
@@ -21,7 +21,7 @@
       "title": "Lastmanagement",
       "gridPos": {
         "h": 3,
-        "w": 24,
+        "w": 14,
         "x": 0,
         "y": 0
       },
@@ -2083,6 +2083,62 @@
           "command": "hget",
           "keyName": "tuya:dehumidifier:latest",
           "field": "updated_at"
+        }
+      ]
+    },
+    {
+      "id": 44,
+      "type": "stat",
+      "title": "Batterie-Budget (ohne Geräte)",
+      "description": "Wie viel die Batterie laut Prognose bis zur Frist (12 Uhr, sonst Abend) noch aufnehmen kann, verglichen mit dem, was ihr zum Vollwerden fehlt. Geräte dürfen laufen, solange das auch mit ihrer Last noch reicht.",
+      "gridPos": {
+        "h": 3,
+        "w": 10,
+        "x": 14,
+        "y": 0
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "mappings": [
+            {
+              "type": "special",
+              "options": {
+                "empty": {
+                  "text": "keine Prognose",
+                  "index": 0
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/"
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "compute:latest",
+          "field": "battery_budget"
         }
       ]
     }

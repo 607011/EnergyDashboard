@@ -638,13 +638,18 @@ consumption *without* the machines, 15-minute means: what would otherwise be exp
 battery) and a **forecast** for the next hour. The forecast is the measured production scaled by
 how Open-Meteo's hourly irradiance for the next hour compares with the last hour; converting
 irradiance straight to watts was too inaccurate here (the learned factor is only the fallback near
-sunrise and sunset). Then, per machine, cumulative load `L` (this machine plus the ones before it):
+sunrise and sunset). Then, per machine in priority order, load `L` (this machine plus the higher-priority ones that run
+or are waiting out their start delay -- a higher-priority machine that doesn't fit at all doesn't
+block a smaller one further down):
 
-- **on** if the headroom is at least `L` + `COMPUTE_MARGIN_ON_W`, the forecast covers `L`, and the
-  battery is at least `COMPUTE_SOC_ON` % (default 80)
-- **off** if the headroom falls below `L` − `COMPUTE_TOLERANCE_OFF_W`, or the forecast does while
-  the battery is below `COMPUTE_SOC_FC_OFF` % (battery use is to be feared), or the battery drops
-  below `COMPUTE_SOC_MIN` % (immediately)
+- **on** if the headroom is at least `L` + `COMPUTE_MARGIN_ON_W`, the next-hour forecast covers `L`,
+  and the **battery budget** allows it: with today's irradiance forecast, the battery must still get
+  full with `L` running all the way -- by `COMPUTE_BATTERY_FULL_BY_HOUR` (12:00) if it could make
+  that at all, otherwise by the end of the day. The battery charges at most
+  `COMPUTE_BATTERY_MAX_CHARGE_W` (2500 W); surplus above that is exported anyway, so it's always
+  free for the machines. Without a forecast the old fixed `COMPUTE_SOC_ON` % (80) applies instead
+- **off** if the headroom falls below `L` − `COMPUTE_TOLERANCE_OFF_W`, or the battery budget no
+  longer allows `L`, or the battery drops below `COMPUTE_SOC_MIN` % *while discharging* (immediately)
 - a change only applies after its condition has held for `COMPUTE_ON_DELAY_MIN` /
   `COMPUTE_OFF_DELAY_MIN` (15 / 20 minutes), and a machine keeps `COMPUTE_MIN_ON_MIN` /
   `COMPUTE_MIN_OFF_MIN` (45 / 45) minutes of run time or pause. Without production or consumption
