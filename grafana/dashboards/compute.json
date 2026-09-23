@@ -267,7 +267,7 @@
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 27
+        "y": 33
       },
       "datasource": {
         "type": "redis-datasource",
@@ -419,7 +419,7 @@
         "h": 6,
         "w": 24,
         "x": 0,
-        "y": 38
+        "y": 44
       },
       "datasource": {
         "type": "redis-datasource",
@@ -513,7 +513,7 @@
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 44
+        "y": 50
       },
       "datasource": {
         "type": "redis-datasource",
@@ -547,8 +547,8 @@
       "type": "stat",
       "title": "winola: Soll-Zustand",
       "gridPos": {
-        "h": 6,
-        "w": 2,
+        "h": 3,
+        "w": 3,
         "x": 0,
         "y": 7
       },
@@ -599,7 +599,10 @@
         },
         "colorMode": "value",
         "graphMode": "none",
-        "textMode": "auto"
+        "textMode": "auto",
+        "text": {
+          "valueSize": 22
+        }
       },
       "targets": [
         {
@@ -616,9 +619,9 @@
       "type": "stat",
       "title": "winola: Aktor",
       "gridPos": {
-        "h": 6,
-        "w": 2,
-        "x": 2,
+        "h": 3,
+        "w": 3,
+        "x": 3,
         "y": 7
       },
       "datasource": {
@@ -668,7 +671,10 @@
         },
         "colorMode": "value",
         "graphMode": "none",
-        "textMode": "auto"
+        "textMode": "auto",
+        "text": {
+          "valueSize": 22
+        }
       },
       "targets": [
         {
@@ -686,9 +692,9 @@
       "type": "stat",
       "title": "winola: Begründung",
       "gridPos": {
-        "h": 6,
-        "w": 2,
-        "x": 4,
+        "h": 3,
+        "w": 18,
+        "x": 6,
         "y": 7
       },
       "datasource": {
@@ -713,7 +719,11 @@
         },
         "colorMode": "value",
         "graphMode": "none",
-        "textMode": "auto"
+        "textMode": "auto",
+        "text": {
+          "valueSize": 18
+        },
+        "justifyMode": "auto"
       },
       "targets": [
         {
@@ -730,10 +740,10 @@
       "type": "stat",
       "title": "gamer: Soll-Zustand",
       "gridPos": {
-        "h": 6,
-        "w": 2,
-        "x": 6,
-        "y": 7
+        "h": 3,
+        "w": 3,
+        "x": 0,
+        "y": 10
       },
       "datasource": {
         "type": "redis-datasource",
@@ -782,7 +792,10 @@
         },
         "colorMode": "value",
         "graphMode": "none",
-        "textMode": "auto"
+        "textMode": "auto",
+        "text": {
+          "valueSize": 22
+        }
       },
       "targets": [
         {
@@ -799,10 +812,10 @@
       "type": "stat",
       "title": "gamer: Aktor",
       "gridPos": {
-        "h": 6,
-        "w": 2,
-        "x": 8,
-        "y": 7
+        "h": 3,
+        "w": 3,
+        "x": 3,
+        "y": 10
       },
       "datasource": {
         "type": "redis-datasource",
@@ -851,7 +864,10 @@
         },
         "colorMode": "value",
         "graphMode": "none",
-        "textMode": "auto"
+        "textMode": "auto",
+        "text": {
+          "valueSize": 22
+        }
       },
       "targets": [
         {
@@ -869,10 +885,10 @@
       "type": "stat",
       "title": "gamer: Begründung",
       "gridPos": {
-        "h": 6,
-        "w": 2,
-        "x": 10,
-        "y": 7
+        "h": 3,
+        "w": 18,
+        "x": 6,
+        "y": 10
       },
       "datasource": {
         "type": "redis-datasource",
@@ -896,7 +912,11 @@
         },
         "colorMode": "value",
         "graphMode": "none",
-        "textMode": "auto"
+        "textMode": "auto",
+        "text": {
+          "valueSize": 18
+        },
+        "justifyMode": "auto"
       },
       "targets": [
         {
@@ -913,10 +933,10 @@
       "type": "stat",
       "title": "imacola2: Soll-Zustand",
       "gridPos": {
-        "h": 6,
-        "w": 2,
-        "x": 12,
-        "y": 7
+        "h": 3,
+        "w": 3,
+        "x": 0,
+        "y": 13
       },
       "datasource": {
         "type": "redis-datasource",
@@ -965,7 +985,10 @@
         },
         "colorMode": "value",
         "graphMode": "none",
-        "textMode": "auto"
+        "textMode": "auto",
+        "text": {
+          "valueSize": 22
+        }
       },
       "targets": [
         {
@@ -982,10 +1005,10 @@
       "type": "stat",
       "title": "imacola2: Aktor",
       "gridPos": {
-        "h": 6,
-        "w": 2,
-        "x": 14,
-        "y": 7
+        "h": 3,
+        "w": 3,
+        "x": 3,
+        "y": 13
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1034,7 +1057,10 @@
         },
         "colorMode": "value",
         "graphMode": "none",
-        "textMode": "auto"
+        "textMode": "auto",
+        "text": {
+          "valueSize": 22
+        }
       },
       "targets": [
         {
@@ -1052,10 +1078,10 @@
       "type": "stat",
       "title": "imacola2: Begründung",
       "gridPos": {
-        "h": 6,
-        "w": 2,
-        "x": 16,
-        "y": 7
+        "h": 3,
+        "w": 18,
+        "x": 6,
+        "y": 13
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1079,7 +1105,11 @@
         },
         "colorMode": "value",
         "graphMode": "none",
-        "textMode": "auto"
+        "textMode": "auto",
+        "text": {
+          "valueSize": 18
+        },
+        "justifyMode": "auto"
       },
       "targets": [
         {
@@ -1096,10 +1126,10 @@
       "type": "stat",
       "title": "dehumidifier: Soll-Zustand",
       "gridPos": {
-        "h": 6,
-        "w": 2,
-        "x": 18,
-        "y": 7
+        "h": 3,
+        "w": 3,
+        "x": 0,
+        "y": 16
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1148,7 +1178,10 @@
         },
         "colorMode": "value",
         "graphMode": "none",
-        "textMode": "auto"
+        "textMode": "auto",
+        "text": {
+          "valueSize": 22
+        }
       },
       "targets": [
         {
@@ -1165,10 +1198,10 @@
       "type": "stat",
       "title": "dehumidifier: Aktor",
       "gridPos": {
-        "h": 6,
-        "w": 2,
-        "x": 20,
-        "y": 7
+        "h": 3,
+        "w": 3,
+        "x": 3,
+        "y": 16
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1217,7 +1250,10 @@
         },
         "colorMode": "value",
         "graphMode": "none",
-        "textMode": "auto"
+        "textMode": "auto",
+        "text": {
+          "valueSize": 22
+        }
       },
       "targets": [
         {
@@ -1235,10 +1271,10 @@
       "type": "stat",
       "title": "dehumidifier: Begründung",
       "gridPos": {
-        "h": 6,
-        "w": 2,
-        "x": 22,
-        "y": 7
+        "h": 3,
+        "w": 18,
+        "x": 6,
+        "y": 16
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1262,7 +1298,11 @@
         },
         "colorMode": "value",
         "graphMode": "none",
-        "textMode": "auto"
+        "textMode": "auto",
+        "text": {
+          "valueSize": 18
+        },
+        "justifyMode": "auto"
       },
       "targets": [
         {
@@ -1283,7 +1323,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 14
+        "y": 20
       },
       "panels": []
     },
@@ -1296,7 +1336,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 15
+        "y": 21
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1341,7 +1381,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 15
+        "y": 21
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1386,7 +1426,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 15
+        "y": 21
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1431,7 +1471,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 15
+        "y": 21
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1475,7 +1515,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 19
+        "y": 25
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1600,7 +1640,7 @@
         "h": 4,
         "w": 4,
         "x": 0,
-        "y": 53
+        "y": 59
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1645,7 +1685,7 @@
         "h": 4,
         "w": 4,
         "x": 4,
-        "y": 53
+        "y": 59
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1690,7 +1730,7 @@
         "h": 4,
         "w": 4,
         "x": 8,
-        "y": 53
+        "y": 59
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1758,7 +1798,7 @@
         "h": 4,
         "w": 4,
         "x": 12,
-        "y": 53
+        "y": 59
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1826,7 +1866,7 @@
         "h": 4,
         "w": 4,
         "x": 16,
-        "y": 53
+        "y": 59
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1895,7 +1935,7 @@
         "h": 4,
         "w": 4,
         "x": 20,
-        "y": 53
+        "y": 59
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1972,7 +2012,7 @@
         "h": 6,
         "w": 18,
         "x": 0,
-        "y": 57
+        "y": 63
       },
       "datasource": {
         "type": "redis-datasource",
@@ -2042,7 +2082,7 @@
         "h": 6,
         "w": 6,
         "x": 18,
-        "y": 57
+        "y": 63
       },
       "datasource": {
         "type": "redis-datasource",
@@ -2151,7 +2191,7 @@
         "h": 2,
         "w": 24,
         "x": 0,
-        "y": 36
+        "y": 42
       },
       "options": {
         "mode": "markdown",
