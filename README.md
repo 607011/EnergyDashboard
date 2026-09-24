@@ -331,13 +331,18 @@ weeks is far more trustworthy. Readings are stored forever
 ### Hot-water boost on PV surplus
 
 With surplus to spare, the heat pump can store it as hot water: `compute-controller` treats it as a
-load of kind `weishaupt` in `COMPUTE_MACHINES` (e.g. `warmwasser:2000:weishaupt`; ~2 kW is what a
-WGB 14 drew while heating water here, measured from the house consumption). A boost raises the
+load of kind `weishaupt` in `COMPUTE_MACHINES` (e.g. `warmwasser:3500:weishaupt`, what a WGB 14 draws
+here while heating water at ~40 % demand). A boost raises the
 DHW **Normal** temperature to `COMPUTE_DHW_TARGET_C` (holding register 42103) and starts a
 **push** (42102, minutes). The push matters: the heat pump otherwise ignores a small gap between
 setpoint and water temperature (its switching hysteresis); tested on 2026-09-23, a push starts
 loading within ~5 minutes even at 3.5 K below the setpoint, without the electric heaters.
 
+- **Only on sunshine that lasts:** a boost usually runs about two hours, so it may only start, and
+  keep running, while the headroom forecast over the next two hours covers its whole load (e.g.
+  `warmwasser:3500:weishaupt` -- 3.5 kW is what the heat pump draws at ~40 % demand). No minimum
+  run time or delay for this rule: on 2026-09-24 a boost started on a brief 2.2 kW peak and then
+  ran on the battery.
 - **When:** only while the water is at least `COMPUTE_DHW_START_DELTA_K` (5 K) below the target,
   at most `COMPUTE_DHW_MAX_PER_DAY` (2) boosts a day, in its place in the priority queue like any
   other load (same surplus, forecast and battery rules). Without that demand it is "idle" and

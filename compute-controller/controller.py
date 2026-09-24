@@ -243,6 +243,8 @@ class Inputs:
     # off, reserve nothing and skip every delay -- having no demand is not flapping.
     idle: dict = None
     incomplete_min: float | None = None  # how long the data has been incomplete (None = complete)
+    # headroom forecast over the next DHW_FORECAST_H hours (the hot-water boost's usual length)
+    forecast_headroom_long_w: float | None = None
 
 
 @dataclass
@@ -263,6 +265,9 @@ class Decision:
 
 
 DISCHARGING_W = 50.0  # battery power below minus this counts as "discharging"
+# A hot-water boost usually runs this long; it may only start -- and keep running -- while the
+# headroom forecast over this span covers its whole load, so it never runs on the battery.
+DHW_FORECAST_H = 2
 WEISHAUPT_STALE_MS = 5 * MINUTE_MS
 
 
@@ -354,7 +359,12 @@ def decide(machines, states, inputs: Inputs, params: Params, now_ms: int):
             h, fc, soc = inputs.headroom_w, inputs.forecast_headroom_w, inputs.soc
             discharging = inputs.battery_w is not None and inputs.battery_w < -DISCHARGING_W
             budget = inputs.budget(load) if inputs.budget else None
-            if state.on:
+            fc_long = inputs.forecast_headroom_long_w
+            if machine.kind == "weishaupt" and (fc_long is None or fc_long < load):
+                # hard rule, no delays: the boost is optional, and at most dhw_max_per_day a day
+                d = result(False, f"{DHW_FORECAST_H}-Stunden-Prognose {fc_long:.0f} W deckt {load:.0f} W nicht"
+                           if fc_long is not None else f"keine {DHW_FORECAST_H}-Stunden-Prognose")
+            elif state.on:
                 if soc is not None and soc < params.soc_min and discharging:
                     d = result(False, f"Batterie {soc:.0f} % unter {params.soc_min:.0f} % und entlädt")
                 elif age_min < params.min_on_min:
@@ -757,6 +767,14 @@ def cycle(r, params, forecast, tz, learned, now_ms, tuya_devices=None):
         pv_recent += sum(ts_mean(r, k, now_ms, PV_RECENT_MIN) or 0.0 for k in hoymiles_keys(r))
     pv_forecast = forecast_pv(pv_recent, f_next, f_ref, learned)
     forecast_headroom = (pv_forecast - baseline_house) if pv_forecast is not None and baseline_house is not None else None
+    # the same over DHW_FORECAST_H hours, for the hot-water boost
+    long_end = now_s + DHW_FORECAST_H * HOUR_S
+    f_long = forecast_window_mean(forecast.quarter, now_s, long_end, QUARTER_S)
+    if f_long is None or f_ref is None:
+        f_long = forecast_window_mean(hourly, now_s, long_end)
+    pv_forecast_long = forecast_pv(pv_recent, f_long, f_ref, learned)
+    forecast_headroom_long = (pv_forecast_long - baseline_house
+                              if pv_forecast_long is not None and baseline_house is not None else None)
 
     states = {}
     for m in params.machines:
@@ -795,7 +813,8 @@ def cycle(r, params, forecast, tz, learned, now_ms, tuya_devices=None):
         r.set("compute:incomplete_since", now_ms, nx=True)
         incomplete_min = (now_ms - int(r.get("compute:incomplete_since"))) / MINUTE_MS
 
-    inputs = Inputs(complete, headroom, forecast_headroom, soc, battery_w, budget, idle, incomplete_min)
+    inputs = Inputs(complete, headroom, forecast_headroom, soc, battery_w, budget, idle, incomplete_min,
+                    forecast_headroom_long)
     decisions = decide(params.machines, states, inputs, params, now_ms)
 
     pipe = r.pipeline(transaction=False)
@@ -810,6 +829,7 @@ def cycle(r, params, forecast, tz, learned, now_ms, tuya_devices=None):
         "mode": params.mode, "complete": int(complete), "power_known": int(power_known),
         "production_w": fmt(pv), "house_w": fmt(house), "machines_w": fmt(machines_w),
         "headroom_w": fmt(headroom), "forecast_headroom_w": fmt(forecast_headroom),
+        "forecast_headroom_long_w": fmt(forecast_headroom_long),
         "forecast_pv_w": fmt(pv_forecast), "forecast_irradiance_next": fmt(f_next), "forecast_irradiance_last": fmt(f_ref),
         "soc": fmt(soc), "w_per_wm2": fmt(learned, 1), "updated_at": now_ms,
         "battery_budget": base_budget[1] if base_budget else "",
@@ -1018,6 +1038,20 @@ def selftest():
     check("Batterie voll: sofort an", d.on)
     d = decide(PS.machines, {"a": State(False, long_ago)}, inp(900, 900), PS, T)[0]
     check("ohne Prognose-Budget: Wartezeit bleibt", not d.on and "abwarten" in d.reason)
+
+    # --- hot-water boost only while the 2-hour forecast covers its whole load
+    PB = Params(machines=[Machine("ww", 3500, "weishaupt")], on_delay_min=0, off_delay_min=20, min_on_min=45, min_off_min=0)
+    def boost(on, h, fc_long):
+        return decide(PB.machines, {"ww": State(on, T - MINUTE_MS if on else long_ago)},
+                      Inputs(True, h, 5000, 100.0, budget=lambda load: (True, "Batterie voll", float("inf")),
+                             forecast_headroom_long_w=fc_long), PB, T)[0]
+    check("Boost: 2-h-Prognose 3000 W < 3500 W: startet nicht, obwohl gerade 4000 W Überschuss", not boost(False, 4000, 3000).on)
+    check("Boost: 2-h-Prognose 4000 W: startet", boost(False, 4000, 4000).on)
+    d = boost(True, 4000, 3000)
+    check("Boost läuft, 2-h-Prognose reicht nicht mehr: sofort aus (vor Mindestlaufzeit)", not d.on and "2-Stunden-Prognose" in d.reason)
+    check("Boost ohne 2-h-Prognose: aus", not boost(False, 4000, None).on)
+    check("Rechner ignoriert die 2-h-Regel", decide([Machine("a", 200)], {"a": State(False, long_ago)},
+          Inputs(True, 900, 900, 100.0, forecast_headroom_long_w=0), P1, T)[0].on)
 
     # --- off hysteresis: at most half the machine's own watts
     PT = Params(machines=[Machine("small", 65)], on_delay_min=0, off_delay_min=0, min_on_min=0, min_off_min=0)
