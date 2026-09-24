@@ -598,6 +598,20 @@ def actuate_pc(r: redis.Redis, params: "Params", machine: Machine, want_on: bool
     return shutdown_sent, owned
 
 
+def notification(machine: Machine, on: bool, reason: str) -> dict:
+    """Push message for a switching the controller actually carries out (see push/app.py)."""
+    name = machine.name
+    if machine.kind == "weishaupt":
+        title = "Warmwasser-Boost gestartet" if on else "Warmwasser-Boost beendet"
+    elif machine.kind == "tuya":
+        title = f"{name} eingeschaltet" if on else f"{name} ausgeschaltet"
+    elif machine.pc_actuator_kind == "wol":
+        title = f"{name} wird geweckt" if on else f"{name} wird schlafen gelegt"
+    else:
+        title = f"{name} wird hochgefahren" if on else f"{name} wird heruntergefahren"
+    return {"title": title, "body": reason, "tag": f"compute-{name}", "url": "/d/compute-controller"}
+
+
 def actuate_dhw(r, params: "Params", machine: Machine, want_on: bool, live: bool, now_ms: int, wp: dict) -> float:
     """Hands the hot-water boost wish to weishaupt-poller -- refreshed every cycle with a deadline,
     so if this controller stops, the poller restores the heat pump's setting on its own -- and
@@ -828,6 +842,8 @@ def cycle(r, params, forecast, tz, learned, now_ms, tuya_devices=None):
             pipe.lpush("compute:events", line)
             pipe.ltrim("compute:events", 0, 199)
             log.info(line)
+            if actuated:  # push only what really happens, not dry-run decisions
+                pipe.xadd("notify", notification(d.machine, d.on, d.reason), maxlen=200, approximate=True)
         else:
             pipe.hset(f"compute:{name}:state", mapping={
                 "on": int(d.on), "since_ms": states[name].since_ms, "pending_ms": d.pending_ms})
@@ -1118,6 +1134,11 @@ def selftest():
     check("Mac vom Regler geweckt, soll aus: Ruhezustand", wa(False, 80.0, owned=True) == ["ssh_sleep"])
     check("Mac vom Regler geweckt, soll an: wach halten", wa(True, 80.0, owned=True) == ["keep_awake"])
     check("Mac von Hand wach, soll an: eigenes Ruheverhalten behalten", wa(True, 80.0, owned=False) == [])
+
+    # --- push texts
+    check("Push: Windows-PC hochfahren", notification(Machine("gamer", 260, "pc", pc_actuator_kind="shelly"), True, "x")["title"] == "gamer wird hochgefahren")
+    check("Push: Mac schlafen legen", notification(Machine("imac", 210, "pc", pc_actuator_kind="wol"), False, "x")["title"] == "imac wird schlafen gelegt")
+    check("Push: Warmwasser-Boost", notification(Machine("ww", 2000, "weishaupt"), True, "x")["title"] == "Warmwasser-Boost gestartet")
 
     # --- tuya actuation: (re-)send the command on a change or when reality disagrees, not otherwise
     check("Zustand wechselt: senden", tuya_target_state(True, False))

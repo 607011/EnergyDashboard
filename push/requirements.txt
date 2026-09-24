@@ -1,0 +1,4 @@
+redis==5.0.8
+pywebpush==2.0.3
+py-vapid==1.9.4
+cryptography==50.0.1

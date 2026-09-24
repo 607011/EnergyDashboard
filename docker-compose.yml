@@ -87,6 +87,19 @@ services:
       REDIS_PORT: 6379
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
+  # Browser push notifications (Web Push) for the load management's switching events: page at
+  # /push/ behind Grafana login (Caddy), sends what compute-controller appends to Redis "notify".
+  push:
+    build: ./push
+    restart: unless-stopped
+    depends_on:
+      - redis
+    environment:
+      GRAFANA_DOMAIN: ${GRAFANA_DOMAIN:-}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
   # Decides when the compute machines (PrimeGrid) should run, from the PV surplus and a forecast.
   # Dry run only: it records what it *would* switch, nothing is switched yet.
   # Reads Shelly Gen3+ smart plugs locally (no cloud); each plug's name should match a machine

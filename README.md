@@ -718,6 +718,26 @@ machines' own consumption is not in the history; while it is unknown the control
 
 `python controller.py --selftest` (in the container) checks the rules, the forecast and the delays.
 
+### Push notifications
+
+Every switching the controller actually carries out (live, with an actuator -- not dry-run
+decisions) becomes a browser push message: "gamer wird hochgefahren", "imacola2 wird schlafen
+gelegt", "Warmwasser-Boost beendet", with the reason as text. The controller appends it to the
+Redis stream `notify`; the `push` service delivers it via Web Push to every subscribed browser.
+
+- **Subscribe:** open `https://<GRAFANA_DOMAIN>/push/` (linked in the load management dashboard's
+  intro) and tap "Benachrichtigungen aktivieren", once per device. On iPhone/iPad this only works
+  from the **home-screen web app** (iOS 16.4+), not in a Safari tab; on a Mac or PC any current
+  browser. "Test senden" checks the chain.
+- Behind the Grafana login like the meter form; only the service worker script (`/push/sw.js`,
+  nothing private in it) is served without, as browsers fetch it on their own.
+- The VAPID key pair (identifies this sender to Apple's/Google's/Mozilla's push services) is
+  generated on first start and kept in Redis (`push:vapid`), next to the subscriptions
+  (`push:subscriptions`); push services report removed subscriptions, which are then dropped.
+  The VAPID contact is `https://<GRAFANA_DOMAIN>` (`PUSH_VAPID_SUBJECT` to override), so no e-mail
+  address is handed out. Only messages that arrive while the service runs are sent -- no backlog
+  of stale on/off messages after an outage.
+
 ## Credits
 
 [Weather data by Open-Meteo.com](https://open-meteo.com/) (outside temperature, irradiance and cloud
