@@ -69,10 +69,25 @@ WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
 
 MAX_BACKOFF = 60
 
-# Meter/battery IDs ever seen, to tell "not installed" from "read failed this cycle" (see
-# read_expected). Boxed in a list so poll_once can rebind them without a `global` statement.
-_known_meter_ids: list = [None]
-_known_battery_ids: list = [None]
+def configured_ids(name: str) -> set | None:
+    """SOLAREDGE_BATTERIES / SOLAREDGE_METERS: the devices that are really installed, as the
+    solaredge_modbus library names them ("Battery1", "Meter1", comma separated; "none" = none).
+    Unset = auto-detect (read_expected learns them), which a flaky link can fool; set, exactly
+    these are expected and every other slot is ignored."""
+    value = os.environ.get(name, "").strip()
+    if not value:
+        return None
+    return set() if value.lower() == "none" else {v.strip() for v in value.split(",") if v.strip()}
+
+
+CONFIGURED_BATTERIES = configured_ids("SOLAREDGE_BATTERIES")
+CONFIGURED_METERS = configured_ids("SOLAREDGE_METERS")
+
+# Meter/battery IDs expected, to tell "not installed" from "read failed this cycle" (see
+# read_expected): the configured ones, else those ever seen. Boxed in a list so poll_once can
+# rebind them without a `global` statement.
+_known_meter_ids: list = [CONFIGURED_METERS]
+_known_battery_ids: list = [CONFIGURED_BATTERIES]
 
 running = True
 
@@ -350,14 +365,16 @@ def read_expected(known_ids: set | None, actual: dict, kind: str) -> tuple[set, 
     return known_ids | actual.keys(), True
 
 
-def is_empty_battery_slot(values: dict) -> bool:
-    """The inverter also answers for a second battery slot with nothing connected: device address
-    255, capacity at the float "not implemented" value (-3.4e38). Such a slot must not count as a
-    battery -- else a read that loses just that slot (flaky WLAN link) looks incomplete and blanks
-    out the PV total (seen 2026-09-23 with a phantom "Battery2"). Meters are not filtered: the
-    real one reports serial "0", so no such test is safe there."""
-    rated = values.get("rated_energy")
-    return values.get("c_deviceaddress") == 255 or (isinstance(rated, float) and rated < -1e37)
+def is_real_battery(values: dict) -> bool:
+    """The inverter also answers for battery slots with nothing connected (no serial, device
+    address 255, capacity at the float "not implemented" value -3.4e38). Counting such a slot as a
+    battery means every read that loses just that slot (flaky WLAN) looks incomplete and blanks
+    out the PV total -- seen 2026-09-23 with a phantom "Battery2", learned from a half-read block.
+    So only a slot that positively identifies as a battery counts: a serial number and a
+    plausible capacity. (Meters are not filtered: the real one reports serial "0".)"""
+    serial, rated = values.get("c_serialnumber"), values.get("rated_energy")
+    return (isinstance(serial, str) and serial.strip() not in ("", "0", "False")
+            and isinstance(rated, (int, float)) and 0 < rated < 1_000_000)
 
 
 # Last good power per battery: a battery missing from one read (flaky WLAN) is bridged with its
@@ -424,7 +441,10 @@ def poll_once(inverter: solaredge_modbus.Inverter, r: redis.Redis) -> None:
     # instantaneous_power is signed (+ while charging, - while discharging),
     # so adding it back unconditionally corrects both directions at once.
     battery_values = {battery_id: apply_scale_factors(battery) for battery_id, battery in inverter.batteries().items()}
-    battery_values = {k: v for k, v in battery_values.items() if not is_empty_battery_slot(v)}
+    if CONFIGURED_BATTERIES is not None:
+        battery_values = {k: v for k, v in battery_values.items() if k in CONFIGURED_BATTERIES}
+    else:
+        battery_values = {k: v for k, v in battery_values.items() if is_real_battery(v)}
     known_battery_ids, batteries_complete = read_expected(_known_battery_ids[0], battery_values, "Battery")
     _known_battery_ids[0] = known_battery_ids
     for battery_id, values in battery_values.items():
@@ -452,6 +472,8 @@ def poll_once(inverter: solaredge_modbus.Inverter, r: redis.Redis) -> None:
     # isn't exported must have gone to the house -- and whatever is imported
     # went to the house too -- so this holds regardless of charge/discharge state.
     meter_values = {meter_id: apply_scale_factors(meter) for meter_id, meter in inverter.meters().items()}
+    if CONFIGURED_METERS is not None:
+        meter_values = {k: v for k, v in meter_values.items() if k in CONFIGURED_METERS}
     known_meter_ids, meters_complete = read_expected(_known_meter_ids[0], meter_values, "Meter")
     _known_meter_ids[0] = known_meter_ids
     # Now and then (seen around inverter hiccups) the meter answers for a few polls with every
