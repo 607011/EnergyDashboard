@@ -382,7 +382,16 @@ def decide(machines, states, inputs: Inputs, params: Params, now_ms: int):
                     d = result(False, f"Prognose {fc:.0f} W reicht für {load:.0f} W nicht")
                 else:
                     detail = budget[1] if budget else f"Batterie {soc:.0f} %"
-                    d = after_delay(True, f"Überschuss {h:.0f} W ≥ {on_threshold:.0f} W; {detail}", params.on_delay_min)
+                    # The on-delay guards against starting in a brief sunny spell and then running
+                    # the minimum on-time from the battery. With a battery budget reserve of at
+                    # least twice that worst case, it's pointless: start right away.
+                    worst_wh = machine.watts * params.min_on_min / 60
+                    reserve = budget[2] if budget and len(budget) > 2 else None
+                    if reserve is not None and reserve >= 2 * worst_wh:
+                        d = result(True, f"Überschuss {h:.0f} W ≥ {on_threshold:.0f} W; {detail} – sofort, "
+                                   "Reserve reicht für einen Fehlstart")
+                    else:
+                        d = after_delay(True, f"Überschuss {h:.0f} W ≥ {on_threshold:.0f} W; {detail}", params.on_delay_min)
         decisions.append(d)
         if d.on or (not state.on and d.pending_ms):
             reserved += machine.watts
@@ -393,7 +402,8 @@ def battery_budget(hourly, now_s, soft_deadline_s, day_end_s, soc, capacity_wh, 
                    w_per_wm2, derate, soft_label="12:00"):
     """Whether machines may take surplus away from the battery, from today's irradiance forecast.
 
-    Returns load_w -> (ok, text), or None without the needed inputs. The battery can charge from
+    Returns load_w -> (ok, text, reserve_wh), or None without the needed inputs; reserve_wh is by
+    how much the battery would overshoot its need (inf when it's already full). The battery can charge from
     the forecast surplus (derate * w_per_wm2 * irradiance - house - load), but never faster than
     max_charge_w -- whatever is above that is exported anyway and free for the machines. `ok` means
     the battery still gets full by the deadline with this load running all the way: the soft
@@ -420,9 +430,9 @@ def battery_budget(hourly, now_s, soft_deadline_s, day_end_s, soc, capacity_wh, 
 
     def check(load):
         if need <= 0:
-            return True, "Batterie voll"
+            return True, "Batterie voll", float("inf")
         got = achievable(load, until)
-        return got >= need, f"Batterie {soc:.0f} %, bis {label} {got / 1000:.1f} von {need / 1000:.1f} kWh"
+        return got >= need, f"Batterie {soc:.0f} %, bis {label} {got / 1000:.1f} von {need / 1000:.1f} kWh", got - need
     return check
 
 
@@ -978,6 +988,18 @@ def selftest():
     check("zwei Boosts heute: kein dritter", "heute schon 2" in dhw_idle_reason(wp, {"date": today, "starts": "2"}, False, PD, T, today))
     check("veraltete Wärmepumpen-Daten: kein Boost", "keine aktuellen" in dhw_idle_reason({**wp, "updated_at": str(T - 10 * MINUTE_MS)}, {}, False, PD, T, today))
     check("Störung: kein Boost", "Störung" in dhw_idle_reason({**wp, "fault_free": "0"}, {}, False, PD, T, today))
+
+    # --- on-delay skipped when the battery budget reserve covers a false start twice over
+    PS = Params(machines=[Machine("a", 200)], on_delay_min=15, off_delay_min=20, min_on_min=45, min_off_min=45)
+    worst = 200 * 45 / 60  # 150 Wh
+    d = decide(PS.machines, {"a": State(False, long_ago)}, inp(900, 900, budget=lambda load: (True, "B", 2 * worst)), PS, T)[0]
+    check("Budget-Reserve ≥ 2× Fehlstart: sofort an", d.on and d.changed and "sofort" in d.reason)
+    d = decide(PS.machines, {"a": State(False, long_ago)}, inp(900, 900, budget=lambda load: (True, "B", 2 * worst - 1)), PS, T)[0]
+    check("Budget-Reserve knapp: Wartezeit bleibt", not d.on and "abwarten" in d.reason)
+    d = decide(PS.machines, {"a": State(False, long_ago)}, inp(900, 900, budget=lambda load: (True, "Batterie voll", float("inf"))), PS, T)[0]
+    check("Batterie voll: sofort an", d.on)
+    d = decide(PS.machines, {"a": State(False, long_ago)}, inp(900, 900), PS, T)[0]
+    check("ohne Prognose-Budget: Wartezeit bleibt", not d.on and "abwarten" in d.reason)
 
     # --- without complete data: hold, but not forever
     d = decide(P1.machines, {"a": State(True, long_ago)}, Inputs(False, None, None, 90.0, incomplete_min=10), P1, T)[0]

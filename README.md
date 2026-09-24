@@ -698,7 +698,10 @@ block a smaller one further down):
   longer allows `L`, or the battery drops below `COMPUTE_SOC_MIN` % *while discharging* (immediately)
 - a change only applies after its condition has held for `COMPUTE_ON_DELAY_MIN` /
   `COMPUTE_OFF_DELAY_MIN` (15 / 20 minutes), and a machine keeps `COMPUTE_MIN_ON_MIN` /
-  `COMPUTE_MIN_OFF_MIN` (45 / 45) minutes of run time or pause. Without production or consumption
+  `COMPUTE_MIN_OFF_MIN` (45 / 45) minutes of run time or pause. The on-delay is skipped when the
+  battery budget's reserve (how far the battery would overshoot its need, with the load) is at
+  least twice a false start -- the machine's watts over its minimum run time: then a start in a
+  brief sunny spell costs the battery nothing that matters. Without production or consumption
   data it keeps the current state.
 
 The defaults come from `compute-controller/backtest.py`, which replays these rules over the stored
