@@ -320,7 +320,61 @@
         "defaults": {
           "unit": "watt"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Gesamt"
+            },
+            "properties": [
+              {
+                "id": "custom.lineWidth",
+                "value": 3
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 10
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "HMS-1600-4WB"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "HMS-800W-2T"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
@@ -337,9 +391,24 @@
           "type": "timeSeries",
           "command": "ts.range",
           "keyName": "ts:hoymiles:mein_zuhause:power_w",
-          "legend": "Leistung"
+          "legend": "Gesamt"
+        },
+        {
+          "refId": "B",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:hoymiles:hms_1600_4wb:power_w",
+          "legend": "HMS-1600-4WB"
+        },
+        {
+          "refId": "C",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:hoymiles:hms_800w_2t:power_w",
+          "legend": "HMS-800W-2T"
         }
-      ]
+      ],
+      "description": "Gesamtleistung der Anlage und die beiden Wechselrichter einzeln (Hoymiles-Cloud, alle 5 Minuten)."
     }
   ]
 }
