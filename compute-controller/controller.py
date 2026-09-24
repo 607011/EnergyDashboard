@@ -324,7 +324,9 @@ def decide(machines, states, inputs: Inputs, params: Params, now_ms: int):
             decisions.append(Decision(machine, False, state.on, load + params.margin_on_w, inputs.idle[machine.name]))
             continue
         on_threshold = load + params.margin_on_w
-        off_threshold = load - params.tolerance_off_w
+        # Hysteresis below the load before stopping -- but at most half the machine's own watts, or
+        # a small machine (winola, 65 W) would only stop once it already draws from the battery.
+        off_threshold = load - min(params.tolerance_off_w, machine.watts / 2)
         age_min = (now_ms - state.since_ms) / MINUTE_MS
 
         def result(on, reason, pending=0):
@@ -366,7 +368,7 @@ def decide(machines, states, inputs: Inputs, params: Params, now_ms: int):
                                     + (f"{soc:.0f} %" if soc is not None else "unbekannt")
                                     + " (Entladung droht)", params.off_delay_min)
                 else:
-                    d = result(True, f"läuft: Überschuss {h:.0f} W ≥ {off_threshold:.0f} W"
+                    d = result(True, f"läuft: Überschuss {h:.0f} W, aus unter {off_threshold:.0f} W"
                                + (f"; {budget[1]}" if budget else ""))
             else:
                 if age_min < params.min_off_min and state.since_ms > 0:
@@ -1000,6 +1002,13 @@ def selftest():
     check("Batterie voll: sofort an", d.on)
     d = decide(PS.machines, {"a": State(False, long_ago)}, inp(900, 900), PS, T)[0]
     check("ohne Prognose-Budget: Wartezeit bleibt", not d.on and "abwarten" in d.reason)
+
+    # --- off hysteresis: at most half the machine's own watts
+    PT = Params(machines=[Machine("small", 65)], on_delay_min=0, off_delay_min=0, min_on_min=0, min_off_min=0)
+    d = decide(PT.machines, {"small": State(True, long_ago)}, inp(20, 800), PT, T)[0]
+    check("65-W-Rechner: aus unter 32,5 W Überschuss (nicht erst bei -35 W)", not d.on)
+    d = decide(PT.machines, {"small": State(True, long_ago)}, inp(40, 800), PT, T)[0]
+    check("65-W-Rechner bei 40 W Überschuss: läuft weiter", d.on and "aus unter 32" in d.reason)
 
     # --- without complete data: hold, but not forever
     d = decide(P1.machines, {"a": State(True, long_ago)}, Inputs(False, None, None, 90.0, incomplete_min=10), P1, T)[0]

@@ -616,7 +616,11 @@ via its Shelly plug (see above) -- no separate wiring needed for either.
   that the command was sent), cuts the plug; turning on just switches the plug back on. Needs
   `PC_<NAME>_SSH_HOST` and `PC_<NAME>_SSH_USER` (a Windows account with OpenSSH Server enabled and
   the controller's key in `administrators_authorized_keys` or `authorized_keys`, see below), and
-  that machine's own name present in `SHELLY_DEVICES`.
+  that machine's own name present in `SHELLY_DEVICES`. Two things that bit us: give the PC a
+  **fixed address** (DHCP reservation in the router) -- after a boot it may get a different one,
+  and the controller can't shut it down any more; and let Windows **log on automatically**
+  (Sysinternals Autologon), or it waits at the login screen after the power-on and BOINC, which
+  starts with the user's session, never runs.
 - **`wol`** -- for a machine that doesn't reliably power on from a real power cut (some Macs don't;
   see the project's notes on this). Its plug is **never switched** and must stay on permanently;
   "off" is `pmset sleepnow` over SSH instead, "on" is a Wake-on-LAN packet to `PC_<NAME>_MAC`
