@@ -99,6 +99,9 @@ services:
       # for the health watch (which data sources to expect)
       SHELLY_DEVICES: ${SHELLY_DEVICES:-}
       WEISHAUPT_NAME: ${WEISHAUPT_NAME:-wgb14}
+      # for the control page (/control/)
+      COMPUTE_MACHINES: ${COMPUTE_MACHINES:-}
+      TIMEZONE: ${TIMEZONE:-UTC}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       LOG_LEVEL: ${LOG_LEVEL:-INFO}

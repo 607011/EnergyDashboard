@@ -36,6 +36,8 @@ from cryptography.hazmat.primitives import serialization
 from py_vapid import Vapid01
 from pywebpush import WebPushException, webpush
 
+import control
+
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("push")
 
@@ -315,7 +317,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = self.path.split("?", 1)[0]
-        if path in ("/", ""):
+        # the control page comes in unstripped under /control/ (see caddy/Caddyfile)
+        if path == "/control/":
+            self.reply(200, control.PAGE, "text/html; charset=utf-8")
+        elif path == "/control/state":
+            self.json(200, control.state(r))
+        elif path in ("/", ""):
             self.reply(200, PAGE, "text/html; charset=utf-8")
         elif path == "/sw.js":
             # served from /push/ but registered with scope "/": the browser needs this header for that
@@ -337,7 +344,10 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, json.JSONDecodeError):
             self.json(400, {"error": "invalid JSON"})
             return
-        if path == "/subscribe":
+        if path == "/control/set":
+            status, result = control.set_override(r, body)
+            self.json(status, result)
+        elif path == "/subscribe":
             sub = body.get("subscription") or {}
             endpoint = sub.get("endpoint", "")
             if not endpoint.startswith("https://") or not (sub.get("keys") or {}).get("p256dh"):

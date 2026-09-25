@@ -723,6 +723,25 @@ machines' own consumption is not in the history; while it is unknown the control
 
 `python controller.py --selftest` (in the container) checks the rules, the forecast and the delays.
 
+### Manual control (`/control/`)
+
+`https://<GRAFANA_DOMAIN>/control/` (linked in the dashboard intro, behind the Grafana login) has
+buttons per device and for all: **An**, **Aus**, **Pausieren** (the controller doesn't switch it
+at all, e.g. while someone works on a PC) and **Automatik**. On/off/pause ask how long (1-8 hours
+or until 7:00 the next morning) and why, from a fixed list plus an optional note. A button stores
+an override (`compute:override:<name>`) and wakes the controller for an immediate cycle
+(`compute:wake`); the override beats every rule and delay until it expires, then the device is
+back on automatic. A manual "Aus" also shuts down a PC started by hand.
+
+Every button press is logged in the stream `compute:overrides` with its reason and the situation
+at that moment (surplus, forecasts, battery, what the controller itself wanted). The idea: learn
+from them -- repeated "Ich brauche das Gerät" in the same time slot suggests a blocked period,
+"Prognose zu optimistisch" (checked against what actually came) a more cautious forecast. The
+suggestions are meant to be confirmed by hand, not applied silently.
+
+**Evening:** when the battery discharges and the irradiance forecast falls after noon, a stop
+waits only `COMPUTE_EVENING_OFF_DELAY_MIN` (5) instead of 20 minutes -- the sun won't come back.
+
 ### Push notifications
 
 Every switching the controller actually carries out (live, with an actuator -- not dry-run

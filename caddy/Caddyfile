@@ -51,6 +51,20 @@
 		reverse_proxy push:8000
 	}
 
+	# Control page for the load management (manual on/off/pause with a reason), served by the push
+	# service; only for logged-in Grafana users. The prefix is kept, the service routes on it.
+	redir /control /control/
+	handle /control/* {
+		forward_auth grafana:3000 {
+			uri /api/user
+			@unauth status 401
+			handle_response @unauth {
+				redir * /login?redirect_to=%2Fcontrol%2F 302
+			}
+		}
+		reverse_proxy push:8000
+	}
+
 	# Home-screen app (iPhone/iPad, "Add to Home Screen"): icon and manifest, served without login.
 	handle /pwa/* {
 		root * /srv

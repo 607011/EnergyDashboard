@@ -102,6 +102,7 @@ class Params:
     min_off_min: float = 45.0
     on_delay_min: float = 15.0      # a start condition must hold this long before the machine starts
     off_delay_min: float = 20.0     # likewise for a stop (the battery bridges short dips)
+    evening_off_delay_min: float = 5.0  # ... but in the evening, when the sun won't come back, shorter
     soc_on: float = 80.0            # battery level needed to start a machine (%)
     soc_min: float = 40.0           # below this, stop immediately
     soc_fc_off: float = 95.0        # a bad forecast only stops machines while the battery is below this
@@ -169,6 +170,7 @@ def params_from_env(env=os.environ) -> Params:
         min_off_min=f("COMPUTE_MIN_OFF_MIN", 45),
         on_delay_min=f("COMPUTE_ON_DELAY_MIN", 15),
         off_delay_min=f("COMPUTE_OFF_DELAY_MIN", 20),
+        evening_off_delay_min=f("COMPUTE_EVENING_OFF_DELAY_MIN", 5),
         soc_on=f("COMPUTE_SOC_ON", 80),
         soc_min=f("COMPUTE_SOC_MIN", 40),
         soc_fc_off=f("COMPUTE_SOC_FC_OFF", 95),
@@ -245,6 +247,11 @@ class Inputs:
     incomplete_min: float | None = None  # how long the data has been incomplete (None = complete)
     # headroom forecast over the next DHW_FORECAST_H hours (the hot-water boost's usual length)
     forecast_headroom_long_w: float | None = None
+    # the battery discharges while PV is on its way down for the day: stops wait only
+    # evening_off_delay_min -- the sun won't come back, every minute of waiting drains the battery
+    evening_discharge: bool = False
+    # name -> (mode "on"/"off"/"pause", text): manual override from the control page, still valid
+    overrides: dict = None
 
 
 @dataclass
@@ -325,6 +332,14 @@ def decide(machines, states, inputs: Inputs, params: Params, now_ms: int):
     for machine in machines:
         load = reserved + machine.watts
         state = states.get(machine.name) or State(False, 0, 0)
+        override = (inputs.overrides or {}).get(machine.name)
+        if override:
+            mode, text = override
+            on = {"on": True, "off": False}.get(mode, state.on)  # "pause": leave it as it is
+            decisions.append(Decision(machine, on, on != state.on, load + params.margin_on_w, text))
+            if on:
+                reserved += machine.watts
+            continue
         if inputs.idle and machine.name in inputs.idle:
             decisions.append(Decision(machine, False, state.on, load + params.margin_on_w, inputs.idle[machine.name]))
             continue
@@ -344,6 +359,8 @@ def decide(machines, states, inputs: Inputs, params: Params, now_ms: int):
             if waited >= delay_min:
                 return result(want_on, reason)
             return result(state.on, f"{reason} – abwarten ({waited:.0f} von {delay_min:.0f} min)", since)
+
+        off_delay = params.evening_off_delay_min if inputs.evening_discharge else params.off_delay_min
 
         if not inputs.complete or inputs.headroom_w is None:
             gone = inputs.incomplete_min or 0.0
@@ -370,13 +387,13 @@ def decide(machines, states, inputs: Inputs, params: Params, now_ms: int):
                 elif age_min < params.min_on_min:
                     d = result(True, f"läuft, Mindestlaufzeit ({age_min:.0f} von {params.min_on_min:.0f} min)")
                 elif h < off_threshold:
-                    d = after_delay(False, f"Überschuss {h:.0f} W deckt {load:.0f} W nicht mehr", params.off_delay_min)
+                    d = after_delay(False, f"Überschuss {h:.0f} W deckt {load:.0f} W nicht mehr", off_delay)
                 elif budget is not None and not budget[0]:
-                    d = after_delay(False, f"{budget[1]} – Batterie hat Vorrang", params.off_delay_min)
+                    d = after_delay(False, f"{budget[1]} – Batterie hat Vorrang", off_delay)
                 elif budget is None and fc is not None and fc < off_threshold and (soc is None or soc < params.soc_fc_off):
                     d = after_delay(False, f"Prognose {fc:.0f} W reicht nicht, Batterie "
                                     + (f"{soc:.0f} %" if soc is not None else "unbekannt")
-                                    + " (Entladung droht)", params.off_delay_min)
+                                    + " (Entladung droht)", off_delay)
                 else:
                     d = result(True, f"läuft: Überschuss {h:.0f} W, aus unter {off_threshold:.0f} W"
                                + (f"; {budget[1]}" if budget else ""))
@@ -539,14 +556,16 @@ def poll_and_actuate_tuya(r, dev: TuyaDevice, machine, want_on: bool, live: bool
     return machine.watts if effective_on else 0.0
 
 
-def actuate_pc(r: redis.Redis, params: "Params", machine: Machine, want_on: bool, live: bool) -> tuple[bool, bool]:
+def actuate_pc(r: redis.Redis, params: "Params", machine: Machine, want_on: bool, live: bool,
+               force: bool = False) -> tuple[bool, bool]:
     """Runs the SSH/Shelly/WoL actions for a "pc" machine with an actuator configured (see
     pc_actuator.py); does nothing if PC_<NAME>_ACTUATOR isn't set (stays dry-run). Returns
     (shutdown_sent, owned): whether a shutdown is still being waited out, and whether the
     controller itself switched the machine on (it only switches off what it switched on). Both
     are persisted in compute:<name>:latest by the caller and read back here next cycle.
     """
-    owned = r.hget(f"compute:{machine.name}:latest", "owned") == "1"
+    # force: a manual "off" from the control page switches off even a machine started by hand
+    owned = force or r.hget(f"compute:{machine.name}:latest", "owned") == "1"
     if not machine.pc_actuator_kind:
         return False, owned
     plug = r.hgetall(f"shelly:{machine.name}:latest")
@@ -813,8 +832,32 @@ def cycle(r, params, forecast, tz, learned, now_ms, tuya_devices=None):
         r.set("compute:incomplete_since", now_ms, nx=True)
         incomplete_min = (now_ms - int(r.get("compute:incomplete_since"))) / MINUTE_MS
 
+    # manual overrides from the control page (push service, /control/): mode, until_ms, reason
+    overrides, override_modes = {}, {}
+    for m in params.machines:
+        key = f"compute:override:{m.name}"
+        h = r.hgetall(key)
+        if not h:
+            continue
+        try:
+            until = int(h["until_ms"])
+        except (KeyError, ValueError):
+            until = 0
+        if until <= now_ms or h.get("mode") not in ("on", "off", "pause"):
+            r.delete(key)  # expired: back to automatic
+            r.lpush("compute:events", f"{local_now:%d.%m. %H:%M}  {m.name}: wieder Automatik (manuelle Vorgabe abgelaufen)")
+            continue
+        label = {"on": "manuell an", "off": "manuell aus", "pause": "pausiert, Regler schaltet nicht"}[h["mode"]]
+        why = f" – {h['reason']}" if h.get("reason") else ""
+        overrides[m.name] = (h["mode"], f"{label} bis {datetime.fromtimestamp(until / 1000, tz):%H:%M}{why}")
+        override_modes[m.name] = h["mode"]
+
+    # evening: the battery discharges and the irradiance forecast is falling after noon
+    evening_discharge = (battery_w is not None and battery_w < -DISCHARGING_W and local_now.hour >= 12
+                         and f_next is not None and f_ref is not None and f_next < f_ref)
+
     inputs = Inputs(complete, headroom, forecast_headroom, soc, battery_w, budget, idle, incomplete_min,
-                    forecast_headroom_long)
+                    forecast_headroom_long, evening_discharge, overrides)
     decisions = decide(params.machines, states, inputs, params, now_ms)
 
     pipe = r.pipeline(transaction=False)
@@ -833,6 +876,7 @@ def cycle(r, params, forecast, tz, learned, now_ms, tuya_devices=None):
         "forecast_pv_w": fmt(pv_forecast), "forecast_irradiance_next": fmt(f_next), "forecast_irradiance_last": fmt(f_ref),
         "soc": fmt(soc), "w_per_wm2": fmt(learned, 1), "updated_at": now_ms,
         "battery_budget": base_budget[1] if base_budget else "",
+        "evening_discharge": int(evening_discharge),
     }
     pipe.delete("compute:latest")
     pipe.hset("compute:latest", mapping=latest)
@@ -847,7 +891,10 @@ def cycle(r, params, forecast, tz, learned, now_ms, tuya_devices=None):
         is_tuya = bool(d.machine.kind == "tuya" and tuya_devices and name in tuya_devices)
         has_pc_actuator = d.machine.kind == "pc" and bool(d.machine.pc_actuator_kind)
         is_dhw = d.machine.kind == "weishaupt"
-        actuated = (is_tuya or has_pc_actuator or is_dhw) and live
+        mode = override_modes.get(name)
+        # paused: read the device as usual, but never switch it
+        live_m = live and mode != "pause"
+        actuated = (is_tuya or has_pc_actuator or is_dhw) and live_m
         if is_dhw and d.changed and d.on:
             h = r.hgetall(f"compute:{name}:dhw")
             same_day = h.get("date") == today
@@ -875,14 +922,15 @@ def cycle(r, params, forecast, tz, learned, now_ms, tuya_devices=None):
         power_w = None
         shutdown_sent = owned = None
         if is_tuya:
-            power_w = poll_and_actuate_tuya(r, tuya_devices[name], d.machine, d.on, live, now_ms)
+            power_w = poll_and_actuate_tuya(r, tuya_devices[name], d.machine, d.on, live_m, now_ms)
         elif has_pc_actuator:
-            shutdown_sent, owned = actuate_pc(r, params, d.machine, d.on, live)
+            shutdown_sent, owned = actuate_pc(r, params, d.machine, d.on, live_m, force=mode == "off")
         elif is_dhw:
-            power_w = actuate_dhw(r, params, d.machine, d.on, live, now_ms, weishaupt_values.get(name, {}))
+            power_w = actuate_dhw(r, params, d.machine, d.on, live_m, now_ms, weishaupt_values.get(name, {}))
         machine_fields = {
             "desired": int(d.on), "reason": d.reason, "watts": d.machine.watts,
             "threshold_on_w": d.threshold_on_w, "decided_at": now_ms, "actuated": int(actuated),
+            "override": mode or "",
         }
         if power_w is not None:
             machine_fields["power_w"] = power_w
@@ -940,7 +988,15 @@ def main():
             cycle(r, params, forecast, tz, learned, now_ms, tuya_devices)
         except Exception:
             log.exception("Cycle failed")
-        time.sleep(max(0.0, params.interval_s - (time.monotonic() - started)))
+        # Wait for the next cycle -- or less, when the control page asks for one right away (a manual
+        # override should act now, not up to a minute later). Short BLPOPs keep SIGTERM responsive.
+        while running and (left := params.interval_s - (time.monotonic() - started)) > 0:
+            try:
+                if r.blpop("compute:wake", timeout=min(left, 5.0)):
+                    r.delete("compute:wake")
+                    break
+            except redis.RedisError:
+                time.sleep(min(left, 5.0))
     log.info("Stopped")
 
 
@@ -1052,6 +1108,24 @@ def selftest():
     check("Boost ohne 2-h-Prognose: aus", not boost(False, 4000, None).on)
     check("Rechner ignoriert die 2-h-Regel", decide([Machine("a", 200)], {"a": State(False, long_ago)},
           Inputs(True, 900, 900, 100.0, forecast_headroom_long_w=0), P1, T)[0].on)
+
+    # --- manual overrides: first, no delays; "pause" keeps the state
+    PO = Params(machines=[Machine("a", 200), Machine("b", 300)], on_delay_min=15, off_delay_min=20, min_on_min=45, min_off_min=45)
+    ovr = lambda o: {d.machine.name: d for d in decide(PO.machines, {"a": State(False, T - MINUTE_MS), "b": State(True, T - MINUTE_MS)},
+                                                       Inputs(True, 0, 0, 10.0, overrides=o), PO, T)}
+    d = ovr({"a": ("on", "manuell an bis 20:00"), "b": ("off", "manuell aus bis 20:00")})
+    check("manuell an: sofort, trotz Mindestpause und ohne Überschuss", d["a"].on and d["a"].changed)
+    check("manuell aus: sofort, trotz Mindestlaufzeit", not d["b"].on and d["b"].changed)
+    d = ovr({"b": ("pause", "pausiert")})
+    check("pausiert: Zustand bleibt (b läuft weiter)", d["b"].on and not d["b"].changed and d["b"].reason == "pausiert")
+    check("manuell an reserviert seine Leistung", decide([Machine("a", 200), Machine("c", 100)],
+          {"a": State(False, long_ago), "c": State(False, long_ago)},
+          Inputs(True, 350, 900, 90.0, overrides={"a": ("on", "x")}), P1, T)[1].on is False)
+    # --- evening: shorter off-delay
+    PE = Params(machines=[Machine("a", 200)], on_delay_min=0, off_delay_min=20, evening_off_delay_min=5, min_on_min=0, min_off_min=0)
+    sta = {"a": State(True, long_ago, T - 6 * MINUTE_MS)}
+    check("abends bei Entladung: aus nach 5 min", not decide(PE.machines, sta, Inputs(True, 0, 0, 90.0, battery_w=-500, evening_discharge=True), PE, T)[0].on)
+    check("tagsüber: 20 min Geduld", decide(PE.machines, sta, Inputs(True, 0, 0, 90.0, battery_w=-500), PE, T)[0].on)
 
     # --- off hysteresis: at most half the machine's own watts
     PT = Params(machines=[Machine("small", 65)], on_delay_min=0, off_delay_min=0, min_on_min=0, min_off_min=0)
