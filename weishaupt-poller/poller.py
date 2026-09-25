@@ -30,6 +30,7 @@ import time
 import redis
 from pymodbus.client import ModbusTcpClient
 from pymodbus.exceptions import ModbusException
+from pymodbus.pdu import ExceptionResponse
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO"),
@@ -213,22 +214,30 @@ def build_blocks(registers) -> list[tuple[int, int, list]]:
 
 
 BLOCKS = build_blocks(REGISTERS)
-# Blocks the device refused (e.g. circuits that aren't installed): don't ask again every cycle.
-unsupported: set[int] = set()
+# Blocks the device refused (e.g. circuits that aren't installed): don't ask again every cycle,
+# but once an hour, in case the refusal was a fluke. start register -> when it was refused.
+unsupported: dict[int, float] = {}
+UNSUPPORTED_RETRY_S = 3600
 
 
 def read_values(client: ModbusTcpClient) -> dict:
     values: dict = {}
     for start, count, items in BLOCKS:
-        if start in unsupported:
+        if start in unsupported and time.monotonic() - unsupported[start] < UNSUPPORTED_RETRY_S:
             continue
         rr = client.read_input_registers(start, count, slave=UNIT)
-        if rr.isError():
-            # A Modbus exception response means the device is alive but has no such
-            # registers; a real transport failure raises ModbusException instead.
-            log.warning("Registers %d..%d not readable (%s), skipping them from now on", start, start + count - 1, rr)
-            unsupported.add(start)
+        if isinstance(rr, ExceptionResponse):
+            # The device answered "no such registers" (e.g. a heating circuit that isn't installed).
+            if start not in unsupported:
+                log.warning("Registers %d..%d not readable (%s), skipping them for an hour", start, start + count - 1, rr)
+            unsupported[start] = time.monotonic()
             continue
+        if rr.isError():
+            # No (valid) answer at all is a transport problem, not a missing register -- this used
+            # to be taken for the latter and silenced block after block for good during a network
+            # outage (2026-09-24). Fail the poll; the main loop retries with backoff.
+            raise ConnectionError(f"registers {start}..{start + count - 1}: {rr}")
+        unsupported.pop(start, None)
         signed = [r - 0x10000 if r > 0x7FFF else r for r in rr.registers]
         for field, offset, decoder in items:
             value = decoder(signed[offset])
