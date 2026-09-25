@@ -556,6 +556,24 @@ def poll_and_actuate_tuya(r, dev: TuyaDevice, machine, want_on: bool, live: bool
     return machine.watts if effective_on else 0.0
 
 
+ACTION_TEXT = {"ssh_shutdown": "Herunterfahren", "ssh_sleep": "Schlafenlegen", "wol": "Wecken",
+               "keep_awake": "Wachhalten", "shelly_on": "Einschalten der Steckdose", "shelly_off": "Ausschalten der Steckdose"}
+FAILURES_BEFORE_PUSH = 3
+
+
+def report_failure(r, machine: Machine, action: str, exc: Exception) -> None:
+    """Counts failed actuations in a row; the third one becomes a push message (once, until an
+    action succeeds again) -- else, e.g., a PC that moved to another IP address just keeps running."""
+    key = f"compute:{machine.name}:failures"
+    n = r.hincrby(key, "count", 1)
+    r.expire(key, 24 * 3600)
+    if n == FAILURES_BEFORE_PUSH:
+        what = ACTION_TEXT.get(action, action)
+        r.xadd("notify", {"title": f"{machine.name}: {what} schlägt fehl",
+                          "body": f"{FAILURES_BEFORE_PUSH}× hintereinander: {exc}"[:300],
+                          "tag": f"fail-{machine.name}", "url": "/control/"}, maxlen=200, approximate=True)
+
+
 def actuate_pc(r: redis.Redis, params: "Params", machine: Machine, want_on: bool, live: bool,
                force: bool = False) -> tuple[bool, bool]:
     """Runs the SSH/Shelly/WoL actions for a "pc" machine with an actuator configured (see
@@ -614,6 +632,7 @@ def actuate_pc(r: redis.Redis, params: "Params", machine: Machine, want_on: bool
             elif action == "keep_awake":
                 pc_actuator.ssh_run(machine.pc_ssh_host, machine.pc_ssh_user, params.pc_ssh_key,
                                     pc_actuator.MAC_KEEP_AWAKE, wait=True)
+                r.delete(f"compute:{machine.name}:failures")
                 continue  # runs every cycle, not worth a log line
             log.info("%s: %s", machine.name, action)
             if action in ("shelly_on", "wol"):
@@ -622,6 +641,9 @@ def actuate_pc(r: redis.Redis, params: "Params", machine: Machine, want_on: bool
                 owned = False
         except pc_actuator.ActuationError as exc:
             log.warning("%s: %s failed (%s)", machine.name, action, exc)
+            report_failure(r, machine, action, exc)
+            continue
+        r.delete(f"compute:{machine.name}:failures")
     if "shelly_off" in actions:
         shutdown_sent = False
     return shutdown_sent, owned
