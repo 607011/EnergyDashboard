@@ -96,6 +96,9 @@ services:
       - redis
     environment:
       GRAFANA_DOMAIN: ${GRAFANA_DOMAIN:-}
+      # for the health watch (which data sources to expect)
+      SHELLY_DEVICES: ${SHELLY_DEVICES:-}
+      WEISHAUPT_NAME: ${WEISHAUPT_NAME:-wgb14}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       LOG_LEVEL: ${LOG_LEVEL:-INFO}

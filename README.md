@@ -742,6 +742,13 @@ Redis stream `notify`; the `push` service delivers it via Web Push to every subs
   The VAPID contact is `https://<GRAFANA_DOMAIN>` (`PUSH_VAPID_SUBJECT` to override), so no e-mail
   address is handed out. Only messages that arrive while the service runs are sent -- no backlog
   of stale on/off messages after an outage.
+- **Connection warnings:** the same service checks every minute how old the newest data of each
+  source is -- heat pump (15 min, and it must contain values, not just a timestamp), inverter
+  (10 min, a complete PV total), each Shelly plug and the controller itself (10 min). A source
+  that stays silent 5 more minutes gets a "Störung: ..." message, and an all-clear when it's
+  back; brief hiccups get neither. Background: on 2026-09-24 the basement FRITZ!Repeater dropped
+  out of the mesh; heat pump and plugs behind it went silent for two hours, the plugs crashed,
+  and nobody noticed until the morning.
 
 ## Credits
 
