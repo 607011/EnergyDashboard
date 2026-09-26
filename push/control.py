@@ -69,7 +69,7 @@ def state(r) -> dict:
                          "reason": o.get("reason", "")} if o else None,
         })
     latest = r.hgetall("compute:latest")
-    return {"machines": machines, "reasons": REASONS,
+    return {"machines": machines, "reasons": REASONS, "enabled": not r.exists("compute:disabled"),
             "situation": {k: latest.get(k, "") for k in ("headroom_w", "forecast_headroom_w", "soc", "battery_budget")}}
 
 
@@ -117,6 +117,28 @@ def set_override(r, body: dict) -> tuple[int, dict]:
     return 200, {"ok": True}
 
 
+def set_enabled(r, body: dict) -> tuple[int, dict]:
+    """Main switch: load management on (automatic) or off (the controller switches nothing)."""
+    enabled = body.get("enabled")
+    if not isinstance(enabled, bool):
+        return 400, {"error": "enabled must be true or false"}
+    now = datetime.now(TZ)
+    pipe = r.pipeline()
+    if enabled:
+        pipe.delete("compute:disabled")
+    else:
+        pipe.set("compute:disabled", int(now.timestamp() * 1000))
+    text = "Lastmanagement eingeschaltet (Automatik)" if enabled else "Lastmanagement ausgeschaltet (von Hand)"
+    pipe.lpush("compute:events", f"{now:%d.%m. %H:%M}  {text}")
+    pipe.xadd(OVERRIDE_LOG, {"machine": "*", "mode": "enable" if enabled else "disable", "until_ms": "",
+                             "reason_code": "", "text": (body.get("text") or "")[:200],
+                             "controller_desired": "", "controller_reason": "", "situation": "{}"},
+              maxlen=10_000, approximate=True)
+    pipe.rpush("compute:wake", 1)
+    pipe.execute()
+    return 200, {"ok": True, "enabled": enabled}
+
+
 PAGE = """<!doctype html>
 <html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -143,8 +165,12 @@ PAGE = """<!doctype html>
  select, input[type=text] { font-size: 1rem; width: 100%; box-sizing: border-box; padding: .35rem; margin-top: .2rem; }
  fieldset { border: none; padding: 0; margin: .6rem 0; }
  #msg { min-height: 1.2rem; font-size: .9rem; }
+ .dev.main { display: flex; justify-content: space-between; align-items: center; gap: .6rem; flex-wrap: wrap; }
+ .dev.main.off { border-color: #c0392b; background: rgba(192,57,43,.08); }
+ button.danger { background: #c0392b; color: #fff; border-color: #c0392b; }
 </style></head><body>
 <h1>Geräte steuern</h1>
+<div class="dev main" id="main"></div>
 <div class="sit" id="sit"></div>
 <div id="msg"></div>
 <div id="list"></div>
@@ -174,6 +200,12 @@ const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;
 async function load() {
   const s = await (await fetch("state")).json();
   reasons = s.reasons;
+  $("main").className = "dev main" + (s.enabled ? "" : " off");
+  $("main").innerHTML = s.enabled
+    ? `<span><strong>Lastmanagement: EIN</strong> – schaltet automatisch</span>
+       <button class="danger" onclick="mainSwitch(false)">Ausschalten</button>`
+    : `<span><strong>Lastmanagement: AUS</strong> – der Regler schaltet nichts, alles bleibt, wie es ist</span>
+       <button class="primary" onclick="mainSwitch(true)">Einschalten</button>`;
   const t = s.situation;
   $("sit").textContent = `Überschuss ${t.headroom_w || "–"} W · Prognose nächste Stunde ${t.forecast_headroom_w || "–"} W · ${t.battery_budget || ""}`;
   $("list").innerHTML = s.machines.map(m => `
@@ -205,6 +237,13 @@ $("form").addEventListener("submit", e => {
   if (!r) { e.preventDefault(); alert("Bitte einen Grund wählen."); return; }
   send(pending.names, pending.mode, {duration: $("duration").value, reason: r.value, text: $("text").value});
 });
+async function mainSwitch(enabled) {
+  $("msg").textContent = "…";
+  const res = await fetch("enable", {method: "POST", headers: {"Content-Type": "application/json"},
+                                     body: JSON.stringify({enabled})});
+  $("msg").textContent = res.ok ? (enabled ? "Lastmanagement eingeschaltet." : "Lastmanagement ausgeschaltet.") : "Fehler " + res.status;
+  load();
+}
 async function send(names, mode, extra) {
   $("msg").textContent = "…";
   const res = await fetch("set", {method: "POST", headers: {"Content-Type": "application/json"},

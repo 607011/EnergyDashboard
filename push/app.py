@@ -344,7 +344,10 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, json.JSONDecodeError):
             self.json(400, {"error": "invalid JSON"})
             return
-        if path == "/control/set":
+        if path == "/control/enable":
+            status, result = control.set_enabled(r, body)
+            self.json(status, result)
+        elif path == "/control/set":
             status, result = control.set_override(r, body)
             self.json(status, result)
         elif path == "/subscribe":

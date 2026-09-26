@@ -876,6 +876,14 @@ def cycle(r, params, forecast, tz, learned, now_ms, tuya_devices=None):
         overrides[m.name] = (h["mode"], f"{label} bis {datetime.fromtimestamp(until / 1000, tz):%H:%M}{why}")
         override_modes[m.name] = h["mode"]
 
+    # main switch on the control page: load management off = every device as if paused, the
+    # controller switches nothing at all (not even the safe-off without data) until it's back on
+    disabled = r.get("compute:disabled")
+    if disabled:
+        for m in params.machines:
+            overrides[m.name] = ("pause", "Lastmanagement ausgeschaltet – Regler schaltet nichts")
+            override_modes[m.name] = "pause"
+
     # evening: the battery discharges and the irradiance forecast is falling after noon
     evening_discharge = (battery_w is not None and battery_w < -DISCHARGING_W and local_now.hour >= 12
                          and f_next is not None and f_ref is not None and f_next < f_ref)
@@ -901,6 +909,7 @@ def cycle(r, params, forecast, tz, learned, now_ms, tuya_devices=None):
         "soc": fmt(soc), "w_per_wm2": fmt(learned, 1), "updated_at": now_ms,
         "battery_budget": base_budget[1] if base_budget else "",
         "evening_discharge": int(evening_discharge),
+        "disabled": int(bool(disabled)),
     }
     pipe.delete("compute:latest")
     pipe.hset("compute:latest", mapping=latest)
