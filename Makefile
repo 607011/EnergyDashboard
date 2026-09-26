@@ -1,7 +1,9 @@
 .DEFAULT_GOAL := help
 
 # --- Configuration (override e.g. via: make deploy PI_HOST=192.168.0.5) ---
-PI_HOST      ?= 192.168.0.2
+# An SSH destination: "pihole" is a Host alias in ~/.ssh/config (192.168.0.2 with its own key,
+# so deploys don't depend on that key being loaded in the SSH agent).
+PI_HOST      ?= pihole
 PI_DIR       ?= ~/se10k
 DEPLOY_DIR   := deploy
 IMAGES       := redis/redis-stack-server:latest grafana/grafana:11.3.0 se10k-poller:latest se10k-grafana-init:latest se10k-hoymiles-poller:latest se10k-weishaupt-poller:latest se10k-meter-form:latest se10k-push:latest se10k-compute-controller:latest se10k-shelly-poller:latest se10k-caddy:latest
@@ -98,7 +100,7 @@ deploy-start:
 
 deploy: deploy-images deploy-config deploy-start
 	@echo ""
-	@echo "Deployed. Dashboard: http://$(PI_HOST):3000"
+	@echo "Deployed to $(PI_HOST)."
 
 # Fast re-deploy after poller code changes: only rebuild/transfer its image
 # (base layers already exist on the Pi -> small & fast) instead of all four.
