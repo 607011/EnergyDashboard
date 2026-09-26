@@ -706,7 +706,9 @@ class Forecast:
         self.lat, self.lon = lat, lon
         self.hourly = []
         self.quarter = []
-        self.fetched = 0.0
+        # -inf, not 0: time.monotonic() starts near 0 when the Pi boots, so 0 would look like "just
+        # fetched" and the first fetch after a reboot would wait 30 minutes (seen 2026-09-26)
+        self.fetched = float("-inf")
 
     def get(self):
         if self.lat is None or self.lon is None:
@@ -997,7 +999,7 @@ def main():
                 log.error("%s: tuya machine without a working device config -- see the error above; "
                          "it will only ever be decided, never actuated, until that's fixed", m.name)
 
-    learned, learned_at = params.w_per_wm2, 0.0
+    learned, learned_at = params.w_per_wm2, float("-inf")  # -inf: learn at once, even right after boot
     while running:
         started = time.monotonic()
         try:
