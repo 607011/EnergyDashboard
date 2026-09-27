@@ -360,8 +360,9 @@ loading within ~5 minutes even at 3.5 K below the setpoint, without the electric
   leave the heat pump at the boost temperature. Setting writes are capped at `WEISHAUPT_MAX_WRITES_PER_DAY`
   (12); restoring is never held back. `python poller.py --selftest` checks this logic.
 - **Circulation pump:** `COMPUTE_DHW_CIRCULATION` names the Shelly of the hot-water circulation
-  pump (in `SHELLY_DEVICES`); while boosting it is switched on with a 10-minute timer of its own,
-  renewed every minute, so it flushes the pipes with the hot water. Its normal schedule lives in
+  pump (in `SHELLY_DEVICES`); when a boost ends it runs once for 10 minutes (the plug's own timer),
+  flushing the pipes with the hot water. (Running it during the whole boost, as at first, only
+  spread heat into the pipes for an hour.) Its normal schedule lives in
   the plug itself (Shelly `Schedule.Create`, independent of the Pi): here 6-8, 12-14 and
   18-20 h, 5 minutes at every full and half hour.
 - The **Wärmepumpe** dashboard shows the Normal setpoint, the push and whether a boost is on; the

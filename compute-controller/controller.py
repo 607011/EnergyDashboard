@@ -121,7 +121,7 @@ class Params:
     dhw_start_delta_k: float = 5.0     # ... once it's at least this far below it
     dhw_max_per_day: int = 2           # boosts started per day (each writes stored settings)
     dhw_push_min: int = 120
-    dhw_circulation: str = ""          # Shelly (SHELLY_DEVICES name) of the circulation pump, run while boosting
+    dhw_circulation: str = ""          # Shelly (SHELLY_DEVICES name) of the circulation pump, flushed after a boost
 
 
 def parse_shelly_hosts(spec: str) -> dict:
@@ -663,21 +663,28 @@ def notification(machine: Machine, on: bool, reason: str) -> dict:
     return {"title": title, "body": reason, "tag": f"compute-{name}", "url": "/d/compute-controller"}
 
 
-def actuate_dhw(r, params: "Params", machine: Machine, want_on: bool, live: bool, now_ms: int, wp: dict) -> float:
+CIRCULATION_FLUSH_S = 600
+
+
+def actuate_dhw(r, params: "Params", machine: Machine, want_on: bool, live: bool, now_ms: int, wp: dict,
+                ended: bool = False) -> float:
     """Hands the hot-water boost wish to weishaupt-poller -- refreshed every cycle with a deadline,
-    so if this controller stops, the poller restores the heat pump's setting on its own -- and
-    runs the circulation pump while boosting (its own timer turns it off again). Returns the power
-    to count for the machine: the estimate while the compressor runs, else 0."""
+    so if this controller stops, the poller restores the heat pump's setting on its own. When a
+    boost has just ended (`ended`), the circulation pump flushes the pipes once with the hot water
+    for CIRCULATION_FLUSH_S (the plug's own timer turns it off) -- not during the whole boost,
+    which only spread heat into the pipes for an hour. Returns the power to count for the
+    machine: the estimate while the compressor runs, else 0."""
     active = want_on and live
     r.hset(f"weishaupt:{params.weishaupt_name}:boost", mapping={
         "active": int(active), "target_c": params.dhw_target_c, "push_min": params.dhw_push_min,
         "deadline_ms": now_ms + 10 * MINUTE_MS, "updated_at": now_ms})
-    if active and params.dhw_circulation:
+    if ended and live and params.dhw_circulation:
         host = (params.shelly_hosts or {}).get(params.dhw_circulation)
         try:
             if not host:
                 raise pc_actuator.ActuationError(f"no SHELLY_DEVICES entry named {params.dhw_circulation!r}")
-            pc_actuator.shelly_set_switch(host, True, toggle_after_s=600)
+            pc_actuator.shelly_set_switch(host, True, toggle_after_s=CIRCULATION_FLUSH_S)
+            log.info("%s: boost ended, circulation pump flushes the pipes for %d min", machine.name, CIRCULATION_FLUSH_S // 60)
         except pc_actuator.ActuationError as exc:
             log.warning("%s: circulation pump not switched (%s)", machine.name, exc)
     try:
@@ -959,7 +966,8 @@ def cycle(r, params, forecast, tz, learned, now_ms, tuya_devices=None):
         elif has_pc_actuator:
             shutdown_sent, owned = actuate_pc(r, params, d.machine, d.on, live_m, force=mode == "off")
         elif is_dhw:
-            power_w = actuate_dhw(r, params, d.machine, d.on, live_m, now_ms, weishaupt_values.get(name, {}))
+            power_w = actuate_dhw(r, params, d.machine, d.on, live_m, now_ms, weishaupt_values.get(name, {}),
+                                  ended=d.changed and not d.on)
         machine_fields = {
             "desired": int(d.on), "reason": d.reason, "watts": d.machine.watts,
             "threshold_on_w": d.threshold_on_w, "decided_at": now_ms, "actuated": int(actuated),
