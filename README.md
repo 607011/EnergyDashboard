@@ -1,4 +1,6 @@
-# SE10K Modbus → Redis → Grafana
+# Energy Dashboard
+
+<img width="1669" height="1142" alt="grafik" src="https://github.com/user-attachments/assets/48c1a6d3-97b7-4341-9518-9575b1ae05e7" />
 
 Polls a SolarEdge SE10K-RWB48 locally via Modbus TCP (SunSpec profile),
 writes the values to Redis, and visualizes them in a Grafana dashboard —
