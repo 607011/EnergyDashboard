@@ -11,6 +11,8 @@ their *combined* power/energy, so this polls two things per station:
     can only be read as a combined figure, Hoymiles doesn't expose them per device
   - the "burst" channel for each attached microinverter's own AC power and per-PV-string
     power, so each one still gets an accurate individual dashboard
+The station's power_w is the sum of its inverters' burst values whenever all of them reported
+(the cloud's own realtime figure proved unreliable; it is kept as power_cloud_w).
 
 Writes:
   - a Redis hash        "hoymiles:<station>:latest"    -> station-level totals
@@ -145,6 +147,9 @@ def log_device(r: redis.Redis, device_key: str, values: dict, ts_ms: int) -> Non
 def extract_station_values(raw: dict) -> dict:
     return {
         "power_w": to_number(raw.get("real_power")),
+        # the cloud's own figure, kept for comparison: power_w is replaced by the sum of the
+        # station's microinverters whenever all of them reported (see poll_once)
+        "power_cloud_w": to_number(raw.get("real_power")),
         "energy_today_wh": to_number(raw.get("today_eq")),
         "energy_month_wh": to_number(raw.get("month_eq")),
         "energy_year_wh": to_number(raw.get("year_eq")),
@@ -198,12 +203,26 @@ def poll_once(client: HoymilesClient, r: redis.Redis, stations: dict[int, str], 
             continue
 
         by_serial = {entry.get("sn"): entry for entry in burst}
+        powers = []
         for inv in inverters:
             entry = by_serial.get(inv.serial)
             if entry is None:
                 log.warning("Inverter %s (%s): missing from burst response", inv.serial, inv.model_no)
                 continue
-            log_device(r, slugify(inv.model_no), extract_inverter_values(entry), ts_ms)
+            values = extract_inverter_values(entry)
+            log_device(r, slugify(inv.model_no), values, ts_ms)
+            powers.append(values.get("power_w"))
+
+        # The cloud's station power drops to one inverter alone now and then -- on 2026-09-28 it
+        # was exactly the HMS-800W-2T's value every other poll, the HMS-1600-4WB missing. The
+        # inverters' own realtime values are consistent, so when all of them reported, their sum
+        # is the station's power (the cloud's figure stays available as power_cloud_w).
+        if len(powers) == len(inverters) and all(p is not None for p in powers):
+            total = sum(powers)
+            station_key = slugify(name)
+            r.hset(f"hoymiles:{station_key}:latest", "power_w", str(total))
+            r.ts().add(f"ts:hoymiles:{station_key}:power_w", ts_ms, float(total), retention_msecs=TS_RETENTION_MS,
+                       labels={"device": station_key, "field": "power_w"}, duplicate_policy="last")
 
 
 def discover_inverters(client: HoymilesClient, stations: dict[int, str]) -> dict:
