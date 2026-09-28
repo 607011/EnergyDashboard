@@ -1,3 +1,8 @@
+# Fixed project name: image and container names (se10k-poller, se10k-redis-1, ...) must not follow
+# the directory name -- the Makefile's image list and the Pi's running stack rely on it, and the
+# repo was renamed from SE10K to EnergyDashboard.
+name: se10k
+
 services:
   redis:
     image: redis/redis-stack-server:latest
