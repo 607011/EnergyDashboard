@@ -887,7 +887,8 @@ def cycle(r, params, forecast, tz, learned, now_ms, tuya_devices=None):
             continue
         label = {"on": "manuell an", "off": "manuell aus", "pause": "pausiert, Regler schaltet nicht"}[h["mode"]]
         why = f" – {h['reason']}" if h.get("reason") else ""
-        overrides[m.name] = (h["mode"], f"{label} bis {datetime.fromtimestamp(until / 1000, tz):%H:%M}{why}")
+        when = "dauerhaft" if h.get("permanent") == "1" else f"bis {datetime.fromtimestamp(until / 1000, tz):%H:%M}"
+        overrides[m.name] = (h["mode"], f"{label} {when}{why}")
         override_modes[m.name] = h["mode"]
 
     # main switch on the control page: load management off = every device as if paused, the

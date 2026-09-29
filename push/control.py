@@ -38,8 +38,15 @@ REASONS = {
 MODES = ("on", "off", "pause", "auto")
 
 
+# "dauerhaft": far enough away to never expire; the override carries permanent=1 for display
+FOREVER_MS = int(datetime(3000, 1, 1, tzinfo=TZ).timestamp() * 1000)
+
+
 def until_ms(duration: str, now: datetime) -> int | None:
-    """"1".."24" hours, or "morning" = next 07:00 local time."""
+    """"1".."24" hours, "morning" = next 07:00 local time, or "forever" (until set back to
+    automatic; only offered for pause)."""
+    if duration == "forever":
+        return FOREVER_MS
     if duration == "morning":
         t = now.replace(hour=7, minute=0, second=0, microsecond=0)
         if t <= now:
@@ -65,7 +72,9 @@ def state(r) -> dict:
         machines.append({
             "name": name, "kind": kind, "desired": h.get("desired") == "1", "reason": h.get("reason", ""),
             "power_w": h.get("power_w"),
-            "override": {"mode": o["mode"], "until": datetime.fromtimestamp(int(o["until_ms"]) / 1000, TZ).strftime("%H:%M"),
+            "override": {"mode": o["mode"],
+                         "until": "dauerhaft" if o.get("permanent") == "1"
+                         else datetime.fromtimestamp(int(o["until_ms"]) / 1000, TZ).strftime("%H:%M"),
                          "reason": o.get("reason", "")} if o else None,
         })
     latest = r.hgetall("compute:latest")
@@ -85,7 +94,10 @@ def set_override(r, body: dict) -> tuple[int, dict]:
     code = body.get("reason") or ""
     text = (body.get("text") or "").strip()[:200]
     if mode != "auto":
-        until = until_ms(str(body.get("duration", "")), now)
+        duration = str(body.get("duration", ""))
+        if duration == "forever" and mode != "pause":
+            return 400, {"error": "only pause can be permanent"}
+        until = until_ms(duration, now)
         if until is None:
             return 400, {"error": "invalid duration"}
         if code not in REASONS:
@@ -101,7 +113,9 @@ def set_override(r, body: dict) -> tuple[int, dict]:
         if mode == "auto":
             pipe.delete(key)
         else:
+            pipe.delete(key)  # no leftover "permanent" flag from an earlier override
             pipe.hset(key, mapping={"mode": mode, "until_ms": until, "reason": reason, "reason_code": code,
+                                    "permanent": int(duration == "forever"),
                                     "set_at": int(now.timestamp() * 1000)})
         # the log entry: what was asked, why, and what the controller itself would have done
         pipe.xadd(OVERRIDE_LOG, {
@@ -183,6 +197,7 @@ PAGE = """<!doctype html>
    <option value="1">1 Stunde</option><option value="2" selected>2 Stunden</option>
    <option value="4">4 Stunden</option><option value="8">8 Stunden</option>
    <option value="morning">bis morgen 7 Uhr</option>
+   <option value="forever" id="forever">dauerhaft (bis „Automatik“)</option>
   </select></label>
  <fieldset id="reasons"><legend>Warum?</legend></fieldset>
  <label>Anmerkung (optional)<input type="text" id="text" maxlength="200"></label>
@@ -212,7 +227,7 @@ async function load() {
    <div class="dev">
     <div class="head"><span class="name">${esc(m.name)}</span>
      <span class="st ${m.desired ? "on" : "off"}">${m.desired ? "an" : "aus"}${m.power_w ? " · " + Math.round(m.power_w) + " W" : ""}</span></div>
-    ${m.override ? `<div class="why"><span class="ovr">${esc(LABEL[m.override.mode] || m.override.mode)} bis ${esc(m.override.until)}</span> ${esc(m.override.reason)}</div>`
+    ${m.override ? `<div class="why"><span class="ovr">${esc(LABEL[m.override.mode] || m.override.mode)} ${m.override.until === "dauerhaft" ? "dauerhaft" : "bis " + esc(m.override.until)}</span> ${esc(m.override.reason)}</div>`
                  : `<div class="why">Automatik: ${esc(m.reason)}</div>`}
     <div class="btns">${btns(`["${esc(m.name)}"]`, !!m.override)}</div>
    </div>`).join("") + `
@@ -223,8 +238,13 @@ function btns(names, showAuto) {
   return ["on", "off", "pause"].map(mode => `<button onclick='ask(${names}, "${mode}")'>${LABEL[mode]}</button>`).join("")
        + (showAuto ? `<button onclick='send(${names}, "auto")'>Automatik</button>` : "");
 }
+const FOREVER = $("forever");
 function ask(names, mode) {
   pending = {names, mode};
+  // "dauerhaft" only for pausing; removing the <option> works everywhere, hiding it not in Safari
+  const sel = $("duration");
+  if (mode === "pause") { if (!FOREVER.parentNode) sel.appendChild(FOREVER); }
+  else { if (FOREVER.parentNode) FOREVER.remove(); if (sel.value === "forever") sel.value = "2"; }
   $("dtitle").textContent = (names === "all" ? "Alle Geräte" : names.join(", ")) + " " + TITLE[mode];
   $("reasons").innerHTML = "<legend>Warum?</legend>" + Object.entries(reasons).map(([k, v], i) =>
     `<label><input type="radio" name="reason" value="${k}" required> ${esc(v)}</label>`).join("");
