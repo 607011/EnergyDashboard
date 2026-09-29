@@ -597,6 +597,13 @@ def actuate_pc(r: redis.Redis, params: "Params", machine: Machine, want_on: bool
     except ValueError:
         power_w = None
     shutdown_sent = r.hget(f"compute:{machine.name}:latest", "shutdown_sent") == "1"
+    if machine.pc_actuator_kind == "wol" and machine.name not in (params.shelly_hosts or {}):
+        # A Mac without a Shelly plug: awake/asleep from ping instead of the plug's reading, and its
+        # configured watts while awake feed back into the headroom like a plug's measurement would.
+        awake = pc_actuator.ping_awake(machine.pc_ssh_host)
+        power_w = None if awake is None else (machine.watts if awake else 0.0)
+        if power_w is not None:
+            r.hset(f"compute:{machine.name}:latest", mapping={"power_w": power_w, "power_updated_at": int(time.time() * 1000)})
 
     if machine.pc_actuator_kind == "shelly":
         actions = pc_actuator.shelly_pc_actions(want_on, plug_on, power_w, shutdown_sent, owned)

@@ -23,6 +23,7 @@ state beyond that.
 
 import logging
 import socket
+import struct
 
 import paramiko
 import requests
@@ -124,6 +125,29 @@ def shelly_set_switch(host: str, on: bool, toggle_after_s: float | None = None) 
         response.raise_for_status()
     except requests.RequestException as exc:
         raise ActuationError(f"Shelly {host} switch failed: {exc}") from exc
+
+
+def ping_awake(host: str, tries: int = 3, timeout_s: float = 1.0) -> bool | None:
+    """Whether a Mac without a Shelly plug is awake: a sleeping Mac doesn't answer ping (a TCP
+    probe could make a sleep proxy wake it, ICMP doesn't). Unprivileged ICMP socket, which Docker
+    allows by default; several tries so one lost packet doesn't count as asleep. None = can't tell."""
+    try:
+        addr = socket.gethostbyname(host)
+    except OSError:
+        return None
+    for seq in range(tries):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_ICMP) as sock:
+                sock.settimeout(timeout_s)
+                # echo request; for these sockets the kernel sets id and checksum itself
+                sock.sendto(struct.pack("!BBHHH", 8, 0, 0, 0, seq) + b"se10k", (addr, 0))
+                sock.recvfrom(1024)
+                return True
+        except PermissionError:
+            return None
+        except OSError:
+            continue
+    return False
 
 
 def send_wol(mac: str, broadcast: str = "255.255.255.255", ports=(9, 7)) -> None:

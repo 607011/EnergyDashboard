@@ -635,6 +635,9 @@ via its Shelly plug (see above) -- no separate wiring needed for either.
   (needs "Wake for network access" enabled and an Ethernet connection on that machine). Also needs
   `PC_<NAME>_SSH_HOST`/`PC_<NAME>_SSH_USER`, and that machine's name in `SHELLY_DEVICES` purely so
   its plug's power reading can tell awake from asleep.
+  Without a Shelly plug in `SHELLY_DEVICES` for it, the controller tells awake from asleep by ping
+  (a sleeping Mac doesn't answer; ICMP, so no sleep proxy wakes it) and counts the configured
+  watts while it's awake.
 
 Both methods need a dedicated SSH keypair for the controller (separate from anyone's personal
 key), generated once and never checked into git:

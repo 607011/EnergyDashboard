@@ -267,7 +267,7 @@
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 36
+        "y": 39
       },
       "datasource": {
         "type": "redis-datasource",
@@ -419,7 +419,7 @@
         "h": 6,
         "w": 24,
         "x": 0,
-        "y": 47
+        "y": 50
       },
       "datasource": {
         "type": "redis-datasource",
@@ -504,6 +504,13 @@
           "legend": "imacola2"
         },
         {
+          "refId": "F",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:compute:fipsomac:desired",
+          "legend": "fipsomac"
+        },
+        {
           "refId": "D",
           "type": "timeSeries",
           "command": "ts.range",
@@ -520,7 +527,7 @@
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 53
+        "y": 56
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1136,7 +1143,7 @@
         "h": 3,
         "w": 3,
         "x": 0,
-        "y": 19
+        "y": 22
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1208,7 +1215,7 @@
         "h": 3,
         "w": 3,
         "x": 3,
-        "y": 19
+        "y": 22
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1281,7 +1288,7 @@
         "h": 3,
         "w": 18,
         "x": 6,
-        "y": 19
+        "y": 22
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1330,7 +1337,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 23
+        "y": 26
       },
       "panels": []
     },
@@ -1341,9 +1348,9 @@
       "description": "Von diesem Stecker aus dem Regler übernommene Leistung.",
       "gridPos": {
         "h": 4,
-        "w": 6,
+        "w": 5,
         "x": 0,
-        "y": 24
+        "y": 27
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1386,9 +1393,9 @@
       "description": "Von diesem Stecker aus dem Regler übernommene Leistung.",
       "gridPos": {
         "h": 4,
-        "w": 6,
-        "x": 6,
-        "y": 24
+        "w": 5,
+        "x": 5,
+        "y": 27
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1431,9 +1438,9 @@
       "description": "Von diesem Stecker aus dem Regler übernommene Leistung.",
       "gridPos": {
         "h": 4,
-        "w": 6,
-        "x": 12,
-        "y": 24
+        "w": 5,
+        "x": 10,
+        "y": 27
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1476,9 +1483,9 @@
       "description": "Noch keinem Gerät in COMPUTE_MACHINES zugeordnet -- wird nur aufgezeichnet.",
       "gridPos": {
         "h": 4,
-        "w": 6,
-        "x": 18,
-        "y": 24
+        "w": 5,
+        "x": 15,
+        "y": 27
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1522,7 +1529,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 28
+        "y": 31
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1636,6 +1643,13 @@
           "command": "ts.range",
           "keyName": "ts:shelly:zirkulation:power_w",
           "legend": "zirkulation"
+        },
+        {
+          "refId": "F",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:shelly:fipsomac:power_w",
+          "legend": "fipsomac"
         }
       ]
     },
@@ -1647,7 +1661,7 @@
         "h": 4,
         "w": 4,
         "x": 0,
-        "y": 62
+        "y": 65
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1692,7 +1706,7 @@
         "h": 4,
         "w": 4,
         "x": 4,
-        "y": 62
+        "y": 65
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1737,7 +1751,7 @@
         "h": 4,
         "w": 4,
         "x": 8,
-        "y": 62
+        "y": 65
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1805,7 +1819,7 @@
         "h": 4,
         "w": 4,
         "x": 12,
-        "y": 62
+        "y": 65
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1873,7 +1887,7 @@
         "h": 4,
         "w": 4,
         "x": 16,
-        "y": 62
+        "y": 65
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1942,7 +1956,7 @@
         "h": 4,
         "w": 4,
         "x": 20,
-        "y": 62
+        "y": 65
       },
       "datasource": {
         "type": "redis-datasource",
@@ -2019,7 +2033,7 @@
         "h": 6,
         "w": 18,
         "x": 0,
-        "y": 66
+        "y": 69
       },
       "datasource": {
         "type": "redis-datasource",
@@ -2089,7 +2103,7 @@
         "h": 6,
         "w": 6,
         "x": 18,
-        "y": 66
+        "y": 69
       },
       "datasource": {
         "type": "redis-datasource",
@@ -2198,7 +2212,7 @@
         "h": 2,
         "w": 24,
         "x": 0,
-        "y": 45
+        "y": 48
       },
       "options": {
         "mode": "markdown",
@@ -2395,6 +2409,244 @@
           "command": "hget",
           "keyName": "compute:warmwasser:latest",
           "field": "reason"
+        }
+      ]
+    },
+    {
+      "id": 49,
+      "type": "stat",
+      "title": "fipsomac: Soll-Zustand",
+      "gridPos": {
+        "h": 3,
+        "w": 3,
+        "x": 0,
+        "y": 19
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "EIN",
+                  "color": "green",
+                  "index": 0
+                },
+                "0": {
+                  "text": "AUS",
+                  "color": "text",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/"
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "text": {
+          "valueSize": 22
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "compute:fipsomac:latest",
+          "field": "desired"
+        }
+      ]
+    },
+    {
+      "id": 50,
+      "type": "stat",
+      "title": "fipsomac: Aktor",
+      "gridPos": {
+        "h": 3,
+        "w": 3,
+        "x": 3,
+        "y": 19
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "geschaltet",
+                  "color": "orange",
+                  "index": 0
+                },
+                "0": {
+                  "text": "Probelauf",
+                  "color": "text",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/"
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "text": {
+          "valueSize": 22
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "compute:fipsomac:latest",
+          "field": "actuated"
+        }
+      ],
+      "description": "Ob dieses Gerät gerade wirklich geschaltet wird (COMPUTE_MODE=live und Art \"tuya\") oder nur Probelauf ist."
+    },
+    {
+      "id": 51,
+      "type": "stat",
+      "title": "fipsomac: Begründung",
+      "gridPos": {
+        "h": 3,
+        "w": 18,
+        "x": 6,
+        "y": 19
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/.*/"
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "text": {
+          "valueSize": 18
+        },
+        "justifyMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "compute:fipsomac:latest",
+          "field": "reason"
+        }
+      ]
+    },
+    {
+      "id": 52,
+      "type": "stat",
+      "title": "fipsomac: Leistung",
+      "description": "Von diesem Stecker aus dem Regler übernommene Leistung.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 27
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "purple"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "command",
+          "command": "hget",
+          "keyName": "shelly:fipsomac:latest",
+          "field": "power_w"
         }
       ]
     }
