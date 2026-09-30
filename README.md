@@ -638,6 +638,13 @@ via its Shelly plug (see above) -- no separate wiring needed for either.
   Without a Shelly plug in `SHELLY_DEVICES` for it, the controller tells awake from asleep by ping
   (a sleeping Mac doesn't answer; ICMP, so no sleep proxy wakes it) and counts the configured
   watts while it's awake.
+  With `PC_<NAME>_PRESENCE_USERS` (e.g. `wd`), a Mac that is also someone's desk machine stays
+  usable: while one of these users is logged in at the screen (`stat -f %Su /dev/console`, asked
+  every minute while the Mac is awake), BOINC is set to "never" -- ~25 W instead of ~200 W, the
+  machine itself untouched -- and the controller treats the Mac as paused (no sleep, no wake).
+  On logout BOINC gets its previous run mode back and the automatic applies again. BOINC is
+  controlled through its GUI RPC port (31416), reached over the SSH connection with the password
+  from BOINC's own `gui_rpc_auth.cfg`; no `boinccmd` needed on the Mac.
 
 Both methods need a dedicated SSH keypair for the controller (separate from anyone's personal
 key), generated once and never checked into git:

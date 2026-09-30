@@ -88,6 +88,9 @@ class Machine:
     pc_ssh_host: str | None = None
     pc_ssh_user: str | None = None
     pc_mac: str | None = None
+    # console users whose login means "someone is working here": BOINC is paused and the
+    # controller leaves the machine alone until they log out (PC_<NAME>_PRESENCE_USERS)
+    pc_presence_users: tuple = ()
 
 
 @dataclass
@@ -152,6 +155,7 @@ def parse_machines(spec: str, env=os.environ) -> list:
             pc_ssh_host=env.get(prefix + "SSH_HOST"),
             pc_ssh_user=env.get(prefix + "SSH_USER"),
             pc_mac=env.get(prefix + "MAC"),
+            pc_presence_users=tuple(u.strip() for u in env.get(prefix + "PRESENCE_USERS", "").split(",") if u.strip()),
         ))
     return machines
 
@@ -556,6 +560,50 @@ def poll_and_actuate_tuya(r, dev: TuyaDevice, machine, want_on: bool, live: bool
     return machine.watts if effective_on else 0.0
 
 
+def presence_step(r, params: "Params", machine: Machine, live: bool, now_label: str) -> str | None:
+    """For a Mac with PC_<NAME>_PRESENCE_USERS: is one of them logged in at the screen? On login
+    BOINC is set to "never" (the machine stays fully usable, ~25 W instead of ~200 W) and its
+    previous run mode remembered; on logout it is restored. Returns the present user (the caller
+    then treats the machine as paused: no sleep, no wake) or None. Only asks while the machine is
+    awake, and any SSH problem leaves everything as it was."""
+    key = f"compute:{machine.name}:presence"
+    stored = r.hgetall(key)
+    plug = r.hgetall(f"shelly:{machine.name}:latest")
+    try:
+        awake = float(plug["power_w"]) > pc_actuator.POWER_THRESHOLD_W
+    except (KeyError, ValueError):
+        awake = bool(pc_actuator.ping_awake(machine.pc_ssh_host))
+    if not awake:
+        return stored.get("user") or None
+    args = (machine.pc_ssh_host, machine.pc_ssh_user, params.pc_ssh_key)
+    try:
+        user = pc_actuator.console_user(*args)
+        present = user in machine.pc_presence_users
+        if present and not stored:
+            previous = pc_actuator.boinc_run_mode(*args, set_mode="never") if live else "auto"
+            r.hset(key, mapping={"user": user, "boinc_mode": previous})
+            line = f"{now_label}  {machine.name}: {user} hat sich angemeldet – BOINC angehalten, Regler schaltet nicht"
+            r.lpush("compute:events", line)
+            log.info(line)
+            if live:
+                r.xadd("notify", {"title": f"{machine.name}: {user} angemeldet", "body": "BOINC angehalten, der Regler lässt den Rechner in Ruhe.",
+                                  "tag": f"presence-{machine.name}", "url": "/d/compute-controller"}, maxlen=200, approximate=True)
+        elif not present and stored:
+            if live:
+                pc_actuator.boinc_run_mode(*args, set_mode=stored.get("boinc_mode") or "auto")
+            r.delete(key)
+            line = f"{now_label}  {machine.name}: {stored.get('user', '?')} hat sich abgemeldet – BOINC läuft wieder, Automatik"
+            r.lpush("compute:events", line)
+            log.info(line)
+            if live:
+                r.xadd("notify", {"title": f"{machine.name}: {stored.get('user', '?')} abgemeldet", "body": "BOINC läuft wieder, Automatik aktiv.",
+                                  "tag": f"presence-{machine.name}", "url": "/d/compute-controller"}, maxlen=200, approximate=True)
+        return user if present else None
+    except pc_actuator.ActuationError as exc:
+        log.warning("%s: presence check failed (%s)", machine.name, exc)
+        return stored.get("user") or None
+
+
 ACTION_TEXT = {"ssh_shutdown": "Herunterfahren", "ssh_sleep": "Schlafenlegen", "wol": "Wecken",
                "keep_awake": "Wachhalten", "shelly_on": "Einschalten der Steckdose", "shelly_off": "Ausschalten der Steckdose"}
 FAILURES_BEFORE_PUSH = 3
@@ -890,6 +938,15 @@ def cycle(r, params, forecast, tz, learned, now_ms, tuya_devices=None):
         when = "dauerhaft" if h.get("permanent") == "1" else f"bis {datetime.fromtimestamp(until / 1000, tz):%H:%M}"
         overrides[m.name] = (h["mode"], f"{label} {when}{why}")
         override_modes[m.name] = h["mode"]
+
+    # someone is logged in at a machine's screen (see presence_step): paused, unless a manual
+    # override from the control page already says otherwise
+    for m in params.machines:
+        if m.kind == "pc" and m.pc_presence_users and m.pc_ssh_host and m.pc_ssh_user:
+            present = presence_step(r, params, m, params.mode == "live", f"{local_now:%d.%m. %H:%M}")
+            if present and m.name not in overrides:
+                overrides[m.name] = ("pause", f"{present} ist angemeldet – BOINC angehalten, Regler schaltet nicht")
+                override_modes[m.name] = "pause"
 
     # main switch on the control page: load management off = every device as if paused, the
     # controller switches nothing at all (not even the safe-off without data) until it's back on
@@ -1291,6 +1348,9 @@ def selftest():
     check("Mac vom Regler geweckt, soll aus: Ruhezustand", wa(False, 80.0, owned=True) == ["ssh_sleep"])
     check("Mac vom Regler geweckt, soll an: wach halten", wa(True, 80.0, owned=True) == ["keep_awake"])
     check("Mac von Hand wach, soll an: eigenes Ruheverhalten behalten", wa(True, 80.0, owned=False) == [])
+
+    check("Anwesenheits-Nutzer geparst", parse_machines("fips:260", {"PC_FIPS_PRESENCE_USERS": "wd, gast"})[0].pc_presence_users == ("wd", "gast"))
+    check("ohne Angabe keine Anwesenheitsprüfung", parse_machines("fips:260", {})[0].pc_presence_users == ())
 
     # --- push texts
     check("Push: Windows-PC hochfahren", notification(Machine("gamer", 260, "pc", pc_actuator_kind="shelly"), True, "x")["title"] == "gamer wird hochgefahren")

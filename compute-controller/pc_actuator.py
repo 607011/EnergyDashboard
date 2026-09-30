@@ -21,7 +21,9 @@ Both methods use the plug's power reading that shelly-poller already keeps in Re
 state beyond that.
 """
 
+import hashlib
 import logging
+import re
 import socket
 import struct
 
@@ -113,6 +115,83 @@ def ssh_run(host: str, user: str, key_path: str, command: str, wait: bool = Fals
         raise ActuationError(f"ssh {user}@{host} failed: {exc}") from exc
     finally:
         client.close()
+
+
+# --- presence: who sits at a Mac, and pausing BOINC for them ------------------------------------
+
+BOINC_RPC_PORT = 31416
+BOINC_PASSWORD_FILE = "/Library/Application Support/BOINC Data/gui_rpc_auth.cfg"
+BOINC_MODES = {1: "always", 2: "auto", 3: "never"}
+
+
+def _ssh(host: str, user: str, key_path: str) -> paramiko.SSHClient:
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    client.connect(host, username=user, key_filename=key_path, timeout=SSH_TIMEOUT_S,
+                   look_for_keys=False, allow_agent=False)
+    return client
+
+
+def _boinc_rpc(channel, request: str) -> str:
+    """One request/reply of BOINC's GUI RPC: XML framed by <boinc_gui_rpc_request>, ended by 0x03."""
+    channel.sendall(f"<boinc_gui_rpc_request>\n{request}\n</boinc_gui_rpc_request>\n\x03".encode())
+    data = b""
+    while not data.endswith(b"\x03"):
+        chunk = channel.recv(65536)
+        if not chunk:
+            break
+        data += chunk
+    return data.rstrip(b"\x03").decode(errors="replace")
+
+
+def console_user(host: str, user: str, key_path: str) -> str:
+    """The user whose session is on the Mac's screen ("root" at the login window)."""
+    client = None
+    try:
+        client = _ssh(host, user, key_path)
+        _, stdout, _ = client.exec_command("stat -f %Su /dev/console", timeout=SSH_TIMEOUT_S)
+        return stdout.read().decode().strip()
+    except (paramiko.SSHException, OSError) as exc:
+        raise ActuationError(f"ssh {user}@{host} failed: {exc}") from exc
+    finally:
+        if client:
+            client.close()
+
+
+def boinc_run_mode(host: str, user: str, key_path: str, set_mode: str | None = None) -> str:
+    """Reads BOINC's permanent run mode ("always"/"auto"/"never") on a Mac and, with set_mode,
+    changes it -- "never" suspends all computing (GPU included), without touching the machine.
+    No boinccmd needed: the client's GUI RPC port is reached through the SSH connection, the
+    password comes from BOINC's own file (readable for an admin user). Returns the mode it found."""
+    client = None
+    try:
+        client = _ssh(host, user, key_path)
+        _, stdout, _ = client.exec_command(f'cat "{BOINC_PASSWORD_FILE}"', timeout=SSH_TIMEOUT_S)
+        password = stdout.read().decode().strip()
+        channel = client.get_transport().open_channel("direct-tcpip", ("127.0.0.1", BOINC_RPC_PORT), ("127.0.0.1", 0),
+                                                      timeout=SSH_TIMEOUT_S)
+        channel.settimeout(SSH_TIMEOUT_S)
+        nonce = re.search(r"<nonce>(.*?)</nonce>", _boinc_rpc(channel, "<auth1/>"))
+        if not nonce:
+            raise ActuationError("BOINC RPC: no nonce")
+        digest = hashlib.md5((nonce.group(1) + password).encode()).hexdigest()
+        if "<authorized/>" not in _boinc_rpc(channel, f"<auth2>\n<nonce_hash>{digest}</nonce_hash>\n</auth2>"):
+            raise ActuationError("BOINC RPC: not authorized")
+        status = re.search(r"<task_mode_perm>(\d+)</task_mode_perm>", _boinc_rpc(channel, "<get_cc_status/>"))
+        found = BOINC_MODES.get(int(status.group(1)), "auto") if status else "auto"
+        if set_mode and set_mode != found:
+            if set_mode not in BOINC_MODES.values():
+                raise ActuationError(f"unknown BOINC mode {set_mode!r}")
+            reply = _boinc_rpc(channel, f"<set_run_mode>\n<{set_mode}/>\n<duration>0</duration>\n</set_run_mode>")
+            if "<success/>" not in reply:
+                raise ActuationError(f"BOINC RPC: set_run_mode failed: {reply[:100]}")
+        channel.close()
+        return found
+    except (paramiko.SSHException, OSError) as exc:
+        raise ActuationError(f"BOINC RPC via ssh {user}@{host} failed: {exc}") from exc
+    finally:
+        if client:
+            client.close()
 
 
 def shelly_set_switch(host: str, on: bool, toggle_after_s: float | None = None) -> None:
