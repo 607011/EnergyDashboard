@@ -178,10 +178,41 @@ def health_step(now_ms: int, alert_after_min: float = 5) -> list[dict]:
     return messages
 
 
+# "Battery full" message: once per charge -- the battery reports exactly 100 % when full; it only
+# counts as not full again once it has dropped below BATTERY_REARM_PCT, so hovering at 99-100 %
+# doesn't repeat the message.
+BATTERY_KEY = "solaredge:battery:battery1:latest"
+BATTERY_STATE_KEY = "push:battery_full"  # "armed" (next 100 % gets a message) or "done"
+BATTERY_FULL_PCT = 99.9
+BATTERY_REARM_PCT = float(os.environ.get("BATTERY_REARM_PCT", "90"))
+
+
+def battery_step(now_ms: int) -> list[dict]:
+    try:
+        soc = float(r.hget(BATTERY_KEY, "soe"))
+    except (TypeError, ValueError):
+        return []
+    if (age_min(BATTERY_KEY, now_ms=now_ms) or 0) > 10:
+        return []  # stale reading: decide nothing
+    state = r.get(BATTERY_STATE_KEY)
+    if state is None:  # first run: don't announce a battery that was already full
+        r.set(BATTERY_STATE_KEY, "done" if soc >= BATTERY_FULL_PCT else "armed")
+        return []
+    if state == "armed" and soc >= BATTERY_FULL_PCT:
+        r.set(BATTERY_STATE_KEY, "done")
+        at = datetime.fromtimestamp(now_ms / 1000, control.TZ).strftime("%H:%M")
+        return [{"title": "Batterie voll", "body": f"100 % um {at} Uhr – der Überschuss geht jetzt an die Geräte bzw. ins Netz.",
+                 "tag": "battery-full", "url": "/d/pv-overview"}]
+    if state == "done" and soc < BATTERY_REARM_PCT:
+        r.set(BATTERY_STATE_KEY, "armed")
+    return []
+
+
 def health_loop() -> None:
     while True:
         try:
-            for m in health_step(int(time.time() * 1000)):
+            now_ms = int(time.time() * 1000)
+            for m in health_step(now_ms) + battery_step(now_ms):
                 r.xadd(STREAM, m, maxlen=200, approximate=True)
                 log.info("Health: %s", m["title"])
         except Exception:

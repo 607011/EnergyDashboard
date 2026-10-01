@@ -793,7 +793,9 @@ Redis stream `notify`; the `push` service delivers it via Web Push to every subs
   (10 min, a complete PV total), each Shelly plug and the controller itself (10 min). A source
   that stays silent 5 more minutes gets a "Störung: ..." message, and an all-clear when it's
   back; brief hiccups get neither. Also the Pi's CPU temperature (from `sysmon`): a warning above
-  `PI_TEMP_WARN_C` (70 °C) held for 5 minutes, the all-clear only below `PI_TEMP_CLEAR_C` (65 °C). Background: on 2026-09-24 the basement FRITZ!Repeater dropped
+  `PI_TEMP_WARN_C` (70 °C) held for 5 minutes, the all-clear only below `PI_TEMP_CLEAR_C` (65 °C).
+- **Battery full:** a "Batterie voll" message when the battery reaches 100 %, once per charge -- it
+  counts as not full again only after dropping below `BATTERY_REARM_PCT` (90 %). Background: on 2026-09-24 the basement FRITZ!Repeater dropped
   out of the mesh; heat pump and plugs behind it went silent for two hours, the plugs crashed,
   and nobody noticed until the morning.
 
