@@ -395,6 +395,20 @@ All dashboards are provisioned as JSON under `grafana/dashboards/` and
 loaded automatically on startup (Grafana provisioning); changes made in the
 Grafana UI can be saved back there via "Export → Save JSON".
 
+## System health (`sysmon`)
+
+`sysmon` records the health of the Raspberry Pi itself once a minute: CPU and RP1 temperature,
+CPU clock (it drops when the Pi throttles, from 80 °C on a Pi 5), the under-voltage alarm, load,
+CPU usage, memory, root filesystem, how much is written to the SD card per hour (its wear),
+network throughput and error counters, and the packet loss to the router (20 pings a minute,
+`SYSMON_PING_HOST`, default 192.168.0.1). Dashboard: **System: Raspberry Pi**
+(`grafana/dashboards/system.json`). It runs with the host's network so the counters and pings are
+the Pi's own, and needs no privileges (`/proc` and `/sys` are host-wide in a container).
+
+Background: the Pi 4 this ran on lost ~50 % of its packets in bursts for hours, twice, without a
+trace in any log; the Pi 5 that replaced it has no heatsink. About 90 "dropped" packets a minute on
+the interface are normal (frames the Pi doesn't speak, such as AVM mesh), not a sign of trouble.
+
 ## Configuration (`.env`)
 
 | Variable                  | Default            | Meaning                                    |

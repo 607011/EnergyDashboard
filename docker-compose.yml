@@ -92,6 +92,22 @@ services:
       REDIS_PORT: 6379
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
+  # Health of the Raspberry Pi itself (temperature, clock, under-voltage, memory, SD writes, network,
+  # packet loss to the router) for the "System" dashboard. Host network so the interface counters
+  # and pings are the Pi's own; reaches Redis on its published loopback port. No privileges.
+  sysmon:
+    build: ./sysmon
+    restart: unless-stopped
+    network_mode: host
+    depends_on:
+      - redis
+    environment:
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: 6379
+      TS_RETENTION_DAYS: ${TS_RETENTION_DAYS:-365}
+      SYSMON_PING_HOST: ${SYSMON_PING_HOST:-192.168.0.1}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
   # Browser push notifications (Web Push) for the load management's switching events: page at
   # /push/ behind Grafana login (Caddy), sends what compute-controller appends to Redis "notify".
   push:
