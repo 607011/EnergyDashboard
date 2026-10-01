@@ -29,6 +29,7 @@ import logging
 import os
 import threading
 import time
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import redis
@@ -217,6 +218,11 @@ PAGE = """<!doctype html>
  button.secondary { background: transparent; color: inherit; }
  #status { padding: .8rem; border-radius: .5rem; background: rgba(128,128,128,.15); }
  a { color: inherit; }
+ h2 { font-size: 1.1rem; margin-top: 2rem; }
+ .entry { border-top: 1px solid rgba(128,128,128,.3); padding: .5rem 0; }
+ .entry time { font-size: .8rem; opacity: .7; }
+ .entry .t { font-weight: 600; }
+ .entry .b { font-size: .9rem; opacity: .85; }
 </style></head><body>
 <h1>Benachrichtigungen</h1>
 <p>Push-Nachricht auf diesem Gerät, sobald das Lastmanagement ein Gerät hoch- oder
@@ -226,6 +232,8 @@ herunterfährt, ein- oder ausschaltet (Rechner, Entfeuchter, Warmwasser-Boost).<
 <button id="test" class="secondary" hidden>Test senden</button>
 <button id="off" class="secondary" hidden>Auf diesem Gerät abschalten</button></p>
 <p><a href="../d/compute-controller">Zum Lastmanagement</a></p>
+<h2>Letzte Benachrichtigungen</h2>
+<div id="log"><p>…</p></div>
 <script>
 const $ = id => document.getElementById(id);
 const say = t => $("status").textContent = t;
@@ -284,6 +292,14 @@ $("off").onclick = async () => {
   } catch (e) { say("Fehler: " + e.message); }
 };
 refresh().catch(e => say("Fehler: " + e.message));
+const escH = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+async function loadLog() {
+  const items = await (await fetch("log")).json();
+  $("log").innerHTML = items.length ? items.map(m => `<div class="entry"><time>${escH(m.time)}</time>
+    <div class="t">${escH(m.title)}</div><div class="b">${escH(m.body)}</div></div>`).join("")
+    : "<p>Noch keine Benachrichtigungen.</p>";
+}
+loadLog().catch(() => {}); setInterval(() => loadLog().catch(() => {}), 30000);
 </script>
 </body></html>
 """
@@ -340,6 +356,12 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/sw.js":
             # served from /push/ but registered with scope "/": the browser needs this header for that
             self.reply(200, SERVICE_WORKER, "text/javascript; charset=utf-8", {"Service-Worker-Allowed": "/"})
+        elif path == "/log":
+            # the stream ids are millisecond timestamps: newest first, the last 100
+            entries = r.xrevrange(STREAM, count=100)
+            tz = control.TZ
+            self.json(200, [{"time": datetime.fromtimestamp(int(eid.split("-")[0]) / 1000, tz).strftime("%d.%m. %H:%M"),
+                             "title": f.get("title", ""), "body": f.get("body", "")} for eid, f in entries])
         elif path == "/key":
             self.json(200, {"key": PUBLIC_KEY})
         else:
