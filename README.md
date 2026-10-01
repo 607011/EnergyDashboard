@@ -792,7 +792,8 @@ Redis stream `notify`; the `push` service delivers it via Web Push to every subs
   source is -- heat pump (15 min, and it must contain values, not just a timestamp), inverter
   (10 min, a complete PV total), each Shelly plug and the controller itself (10 min). A source
   that stays silent 5 more minutes gets a "Störung: ..." message, and an all-clear when it's
-  back; brief hiccups get neither. Background: on 2026-09-24 the basement FRITZ!Repeater dropped
+  back; brief hiccups get neither. Also the Pi's CPU temperature (from `sysmon`): a warning above
+  `PI_TEMP_WARN_C` (70 °C) held for 5 minutes, the all-clear only below `PI_TEMP_CLEAR_C` (65 °C). Background: on 2026-09-24 the basement FRITZ!Repeater dropped
   out of the mesh; heat pump and plugs behind it went silent for two hours, the plugs crashed,
   and nobody noticed until the morning.
 

@@ -106,12 +106,18 @@ HEALTH_KEY = "push:health"   # hash check name -> "since_ms:alerted" (since when
 SHELLY_DEVICES = [e.split(":", 1)[0].strip() for e in os.environ.get("SHELLY_DEVICES", "").split(",") if ":" in e]
 WEISHAUPT = os.environ.get("WEISHAUPT_NAME", "wgb14")
 MINUTE_MS = 60_000
+# Pi CPU temperature (from sysmon): warn above PI_TEMP_WARN_C, all-clear only below PI_TEMP_CLEAR_C
+# so a temperature hovering around the limit doesn't flap. The Pi 5 throttles from 80 degC.
+PI_TEMP_WARN_C = float(os.environ.get("PI_TEMP_WARN_C", "70"))
+PI_TEMP_CLEAR_C = float(os.environ.get("PI_TEMP_CLEAR_C", "65"))
 
 
 def age_min(key: str, field: str = "updated_at", require: str | None = None, now_ms: int | None = None):
     """Minutes since the hash was last updated; None if it never was. With `require`, a hash
     without that field counts as stale too (a poller that writes a timestamp but no values)."""
     h = r.hmget(key, field, require) if require else r.hmget(key, field)
+    if h[0] is None:
+        return None  # no such source here at all (e.g. no heat pump): not checked
     try:
         if require and h[1] in (None, ""):
             return float("inf")
@@ -135,6 +141,12 @@ def health_checks(now_ms: int) -> dict:
     silent = [n for n in SHELLY_DEVICES
               if (x := age_min(f"shelly:{n}:latest", now_ms=now_ms)) is not None and x > 10]
     checks["shelly"] = (bool(silent), "Steckdose(n) antworten nicht: " + ", ".join(silent) if silent else "")
+    temp = r.hget("sysmon:pi:latest", "cpu_temp_c")
+    if temp is not None and age_min("sysmon:pi:latest", now_ms=now_ms) <= 10:
+        t = float(temp)
+        alerted = r.hget(HEALTH_KEY, "pi_temp") or ""
+        limit = PI_TEMP_CLEAR_C if alerted else PI_TEMP_WARN_C  # hysteresis once it's failing
+        checks["pi_temp"] = (t > limit, f"Raspberry Pi zu heiß: {t:.0f} °C (Warnschwelle {PI_TEMP_WARN_C:.0f} °C, ab 80 °C drosselt er)")
     return checks
 
 
@@ -150,16 +162,17 @@ def health_step(now_ms: int, alert_after_min: float = 5) -> list[dict]:
             if alerted != "1" and now_ms - int(since) >= alert_after_min * MINUTE_MS:
                 messages.append({"title": "Störung: " + text.split(":")[0],
                                  "body": text + (". Repeater im Keller prüfen?" if name in ("shelly", "weishaupt") else ""),
-                                 "tag": f"health-{name}", "url": "/d/pv-overview"})
+                                 "tag": f"health-{name}", "url": "/d/pi-system" if name == "pi_temp" else "/d/pv-overview"})
                 alerted = "1"
             r.hset(HEALTH_KEY, name, f"{since}:{alerted or '0'}")
         elif since:
             if alerted == "1":
                 minutes = (now_ms - int(since)) / MINUTE_MS
                 messages.append({"title": "Wieder in Ordnung: " + {"weishaupt": "Wärmepumpe", "inverter": "Wechselrichter",
-                                 "controller": "Lastmanagement", "shelly": "Steckdosen"}[name],
+                                 "controller": "Lastmanagement", "shelly": "Steckdosen",
+                                 "pi_temp": "Raspberry-Pi-Temperatur"}[name],
                                  "body": f"Nach {minutes:.0f} Minuten Störung.", "tag": f"health-{name}",
-                                 "url": "/d/pv-overview"})
+                                 "url": "/d/pi-system" if name == "pi_temp" else "/d/pv-overview"})
             r.hdel(HEALTH_KEY, name)
     return messages
 
