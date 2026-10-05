@@ -14,6 +14,9 @@ so two more things are recorded to tell the possible causes apart while it happe
     broadcasts/multicasts per second and the top broadcast sender, and every ARP frame in which
     another device claims the Pi's address or the router's address shows up with a second MAC
     (address conflict / spoofing). Those findings also go to sysmon:<host>:events.
+And when the router loses CAPTURE_LOSS_PCT of its pings in a minute, the frames of the next
+CAPTURE_SECONDS (both directions, first 128 bytes each) go to a pcap file in CAPTURE_DIR for
+Wireshark; only the newest CAPTURE_KEEP files are kept, so the SD card sees a few MB at most.
 
 Runs with the host's network (docker-compose: network_mode host) so the interface counters and
 the pings are the Pi's own; /proc and /sys are host-wide in a container anyway. Needs no
@@ -44,6 +47,12 @@ GATEWAY = os.environ.get("SYSMON_PING_HOST", "192.168.0.1")
 PING_HOSTS = [tuple(e.split(":", 1)) for e in os.environ.get(
     "SYSMON_PING_HOSTS", f"fritzbox:{GATEWAY},waermepumpe:192.168.0.95,steckdose:192.168.0.159").split(",") if ":" in e]
 MY_IP = os.environ.get("SYSMON_OWN_IP", "192.168.0.2")
+CAPTURE_DIR = os.environ.get("CAPTURE_DIR", "/captures")
+CAPTURE_LOSS_PCT = float(os.environ.get("CAPTURE_LOSS_PCT", "20"))
+CAPTURE_SECONDS = float(os.environ.get("CAPTURE_SECONDS", "120"))
+CAPTURE_KEEP = int(os.environ.get("CAPTURE_KEEP", "10"))
+CAPTURE_SNAPLEN = 128
+CAPTURE_MAX_BYTES = 10 * 2**20
 PINGS = int(os.environ.get("SYSMON_PINGS", "20"))
 RETENTION_MS = int(os.environ.get("TS_RETENTION_DAYS", "365")) * 24 * 3600 * 1000
 
@@ -126,7 +135,38 @@ class FrameWatch(threading.Thread):
         self.own_ip, self.gw_ip = socket.inet_aton(own_ip), socket.inet_aton(gateway_ip)
         self.lock = threading.Lock()
         self.ok = False
+        self.pcap = None            # open file while capturing
+        self.capture_until = 0.0
         self._reset()
+
+    def capture(self, seconds: float) -> str | None:
+        """Starts (or extends) writing all frames to a new pcap file; returns its name when new."""
+        with self.lock:
+            self.capture_until = time.monotonic() + seconds
+            if self.pcap:
+                return None
+            os.makedirs(CAPTURE_DIR, exist_ok=True)
+            name = datetime.now().strftime("capture-%Y%m%d-%H%M%S.pcap")
+            self.pcap = open(os.path.join(CAPTURE_DIR, name), "wb")
+            # pcap global header: magic, v2.4, tz 0, sigfigs 0, snaplen, linktype 1 (Ethernet)
+            self.pcap.write(struct.pack("<IHHiIII", 0xA1B2C3D4, 2, 4, 0, 0, CAPTURE_SNAPLEN, 1))
+        files = sorted(f for f in os.listdir(CAPTURE_DIR) if f.startswith("capture-"))
+        for old in files[:-CAPTURE_KEEP]:
+            try:
+                os.remove(os.path.join(CAPTURE_DIR, old))
+            except OSError:
+                pass
+        return name
+
+    def _write(self, frame: bytes):
+        """Called with the lock held."""
+        if time.monotonic() > self.capture_until or self.pcap.tell() > CAPTURE_MAX_BYTES:
+            self.pcap.close()
+            self.pcap = None
+            return
+        t = time.time()
+        data = frame[:CAPTURE_SNAPLEN]
+        self.pcap.write(struct.pack("<IIII", int(t), int((t % 1) * 1e6), len(data), len(frame)) + data)
 
     def _reset(self):
         self.bcast = self.mcast = self.arp = 0
@@ -143,7 +183,11 @@ class FrameWatch(threading.Thread):
             log.warning("Frame capture not possible (%s) -- broadcast/ARP figures will be missing", exc)
             return
         while True:
-            frame, addr = sock.recvfrom(2048)
+            frame, addr = sock.recvfrom(65535)
+            if self.pcap:
+                with self.lock:
+                    if self.pcap:
+                        self._write(frame)
             if addr[2] == socket.PACKET_OUTGOING or len(frame) < 14:
                 continue
             dst, src, etype = frame[0:6], frame[6:12], frame[12:14]
@@ -275,6 +319,10 @@ def main() -> None:
             values, prev_now = sample(prev, dt)
             nums, texts, events = watch.snapshot(dt)
             values.update(nums)
+            if values.get("ping_loss_pct", 0) >= CAPTURE_LOSS_PCT:
+                started_file = watch.capture(CAPTURE_SECONDS)
+                if started_file:
+                    events.append(f"Mitschnitt gestartet ({values['ping_loss_pct']:.0f} % Verlust zur Fritzbox): {started_file}")
             prev, prev_t = prev_now, started
             store(values, int(time.time() * 1000), texts, events)
         except Exception:

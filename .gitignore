@@ -21,3 +21,6 @@ macos-app/build/
 
 # Private key for compute-controller PC actuation (generated on the Pi, never in git)
 compute-controller-ssh/
+
+# sysmon packet captures (on the Pi)
+captures/

@@ -404,7 +404,11 @@ network throughput and error counters, and the packet loss to three hosts (20 pi
 `SYSMON_PING_HOSTS`: the router, the heat pump by cable, a Shelly plug by Wi-Fi -- only the router
 losing points at the router, all three at the Pi or its cable). A capture of the incoming frames
 counts broadcasts/multicasts per second and notes any ARP frame in which another device claims the
-Pi's address or the router's address appears with a second MAC (list `sysmon:pi:events`). Dashboard: **System: Raspberry Pi**
+Pi's address or the router's address appears with a second MAC (list `sysmon:pi:events`). When the
+router loses 20 % (`CAPTURE_LOSS_PCT`) of a minute's pings, the frames of the next two minutes go to
+a pcap file in `captures/` on the Pi (both directions, 128 bytes each, ~0.5 MB; the newest 10 are
+kept) for Wireshark. The NIC's own counters (`sudo ethtool -S end0`) showed no pause frames and no
+line errors through several loss phases, which rules those out. Dashboard: **System: Raspberry Pi**
 (`grafana/dashboards/system.json`). It runs with the host's network so the counters and pings are
 the Pi's own, and needs no privileges (`/proc` and `/sys` are host-wide in a container).
 

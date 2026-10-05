@@ -99,6 +99,9 @@ services:
     build: ./sysmon
     restart: unless-stopped
     network_mode: host
+    volumes:
+      # pcap files of the moments the router loses pings (for Wireshark), see sysmon/app.py
+      - ./captures:/captures
     depends_on:
       - redis
     environment:
