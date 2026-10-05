@@ -876,7 +876,7 @@
           "refId": "A",
           "type": "timeSeries",
           "command": "ts.range",
-          "keyName": "ts:sysmon:pi:ping_loss_fritzbox_pct",
+          "keyName": "ts:sysmon:pi:ping_loss_pct",
           "legend": "Fritzbox"
         },
         {
@@ -897,7 +897,7 @@
           "refId": "D",
           "type": "timeSeries",
           "command": "ts.range",
-          "keyName": "ts:sysmon:pi:ping_rtt_fritzbox_ms",
+          "keyName": "ts:sysmon:pi:ping_rtt_ms",
           "legend": "Antwortzeit Fritzbox"
         }
       ]
