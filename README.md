@@ -400,8 +400,11 @@ Grafana UI can be saved back there via "Export → Save JSON".
 `sysmon` records the health of the Raspberry Pi itself once a minute: CPU and RP1 temperature,
 CPU clock (it drops when the Pi throttles, from 80 °C on a Pi 5), the under-voltage alarm, load,
 CPU usage, memory, root filesystem, how much is written to the SD card per hour (its wear),
-network throughput and error counters, and the packet loss to the router (20 pings a minute,
-`SYSMON_PING_HOST`, default 192.168.0.1). Dashboard: **System: Raspberry Pi**
+network throughput and error counters, and the packet loss to three hosts (20 pings a minute each,
+`SYSMON_PING_HOSTS`: the router, the heat pump by cable, a Shelly plug by Wi-Fi -- only the router
+losing points at the router, all three at the Pi or its cable). A capture of the incoming frames
+counts broadcasts/multicasts per second and notes any ARP frame in which another device claims the
+Pi's address or the router's address appears with a second MAC (list `sysmon:pi:events`). Dashboard: **System: Raspberry Pi**
 (`grafana/dashboards/system.json`). It runs with the host's network so the counters and pings are
 the Pi's own, and needs no privileges (`/proc` and `/sys` are host-wide in a container).
 

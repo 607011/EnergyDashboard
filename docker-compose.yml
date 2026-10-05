@@ -106,6 +106,7 @@ services:
       REDIS_PORT: 6379
       TS_RETENTION_DAYS: ${TS_RETENTION_DAYS:-365}
       SYSMON_PING_HOST: ${SYSMON_PING_HOST:-192.168.0.1}
+      SYSMON_PING_HOSTS: ${SYSMON_PING_HOSTS:-fritzbox:192.168.0.1,waermepumpe:192.168.0.95,steckdose:192.168.0.159}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
   # Browser push notifications (Web Push) for the load management's switching events: page at

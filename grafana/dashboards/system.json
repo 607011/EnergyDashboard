@@ -762,7 +762,7 @@
     {
       "id": 12,
       "type": "timeseries",
-      "title": "Netzwerk: Paketverlust zur Fritzbox",
+      "title": "Netzwerk: Paketverlust (Fritzbox, Wärmepumpe, Steckdose)",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -773,20 +773,20 @@
         "type": "redis-datasource",
         "uid": "solaredge-redis"
       },
-      "description": "Jede Minute 20 Pings zur Fritzbox: Anteil der verlorenen (Balken) und mittlere Antwortzeit (rechts).",
+      "description": "Jede Minute 20 Pings an drei Ziele: Fritzbox, Wärmepumpe (per Kabel) und Steckdose ‚zirkulation‘ (per WLAN). Verliert nur die Fritzbox, liegt es an ihr; verlieren alle drei, am Pi oder seinem Anschluss. Rechts: Antwortzeit der Fritzbox.",
       "fieldConfig": {
         "defaults": {
           "unit": "percent",
           "custom": {
             "lineWidth": 2,
-            "fillOpacity": 8
+            "fillOpacity": 15
           }
         },
         "overrides": [
           {
             "matcher": {
               "id": "byName",
-              "options": "Antwortzeit"
+              "options": "Antwortzeit Fritzbox"
             },
             "properties": [
               {
@@ -802,22 +802,59 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "Verlust"
+              "options": "Fritzbox"
             },
             "properties": [
-              {
-                "id": "custom.drawStyle",
-                "value": "bars"
-              },
-              {
-                "id": "custom.fillOpacity",
-                "value": 70
-              },
               {
                 "id": "color",
                 "value": {
                   "mode": "fixed",
                   "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Wärmepumpe"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Steckdose"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Antwortzeit Fritzbox"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
                 }
               }
             ]
@@ -839,15 +876,29 @@
           "refId": "A",
           "type": "timeSeries",
           "command": "ts.range",
-          "keyName": "ts:sysmon:pi:ping_loss_pct",
-          "legend": "Verlust"
+          "keyName": "ts:sysmon:pi:ping_loss_fritzbox_pct",
+          "legend": "Fritzbox"
         },
         {
           "refId": "B",
           "type": "timeSeries",
           "command": "ts.range",
-          "keyName": "ts:sysmon:pi:ping_rtt_ms",
-          "legend": "Antwortzeit"
+          "keyName": "ts:sysmon:pi:ping_loss_waermepumpe_pct",
+          "legend": "Wärmepumpe"
+        },
+        {
+          "refId": "C",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:sysmon:pi:ping_loss_steckdose_pct",
+          "legend": "Steckdose"
+        },
+        {
+          "refId": "D",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:sysmon:pi:ping_rtt_fritzbox_ms",
+          "legend": "Antwortzeit Fritzbox"
         }
       ]
     },
@@ -958,7 +1009,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 20
+        "y": 28
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1010,7 +1061,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 20
+        "y": 28
       },
       "datasource": {
         "type": "redis-datasource",
@@ -1051,6 +1102,180 @@
           "command": "ts.range",
           "keyName": "ts:sysmon:pi:disk_used_pct",
           "legend": "SD-Karte belegt"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "Netzwerk: Rundsendungen und Adresskonflikte",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 20
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "description": "Eingehende Rundsendungen (Broadcast) und Multicasts pro Sekunde, ARP-Rahmen pro Minute. Rechts: Rahmen, in denen ein anderes Gerät die Adresse des Pi beansprucht (Adresskonflikt), und Zahl der MACs, die als Fritzbox auftreten (normal: 1).",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Adresskonflikt"
+            },
+            "properties": [
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "MACs der Fritzbox"
+            },
+            "properties": [
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Adresskonflikt"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "MACs der Fritzbox"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "purple"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:sysmon:pi:net_bcast_per_s",
+          "legend": "Broadcast/s"
+        },
+        {
+          "refId": "B",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:sysmon:pi:net_mcast_per_s",
+          "legend": "Multicast/s"
+        },
+        {
+          "refId": "C",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:sysmon:pi:net_arp_per_min",
+          "legend": "ARP/min"
+        },
+        {
+          "refId": "D",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:sysmon:pi:net_ip_conflict",
+          "legend": "Adresskonflikt"
+        },
+        {
+          "refId": "E",
+          "type": "timeSeries",
+          "command": "ts.range",
+          "keyName": "ts:sysmon:pi:net_gw_macs",
+          "legend": "MACs der Fritzbox"
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "type": "table",
+      "title": "Netzwerk-Auffälligkeiten (Mitschrift)",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 20
+      },
+      "datasource": {
+        "type": "redis-datasource",
+        "uid": "solaredge-redis"
+      },
+      "description": "Adresskonflikte, mehrere MACs für die Fritzbox und Rundsende-Fluten (über 50/s), mit Uhrzeit. Leer = nichts Auffälliges.",
+      "options": {
+        "showHeader": false,
+        "cellHeight": "sm"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "cli",
+          "query": "lrange sysmon:pi:events 0 49"
         }
       ]
     }
