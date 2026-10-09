@@ -18,6 +18,13 @@ And when the router loses CAPTURE_LOSS_PCT of its pings in a minute, the frames 
 CAPTURE_SECONDS (both directions, first 128 bytes each) go to a pcap file in CAPTURE_DIR for
 Wireshark; only the newest CAPTURE_KEEP files are kept, so the SD card sees a few MB at most.
 
+The same trigger also dumps raw 802.11 (radiotap) frames from a WLAN adapter in monitor mode, if
+SYSMON_WIFI_INTERFACE is set -- the Fritzbox's own management traffic and any Channel Switch/
+deauth activity, invisible on the wired side. That adapter (an Alfa AWUS036AXM) is put into
+monitor mode on its fixed channel by wlan-monitor.service on the Pi itself (outside Docker, see
+docker-compose.yml), not by this container, so a plain raw socket (no extra capabilities) suffices
+here too.
+
 Runs with the host's network (docker-compose: network_mode host) so the interface counters and
 the pings are the Pi's own; /proc and /sys are host-wide in a container anyway. Needs no
 privileges. Writes sysmon:<host>:latest and ts:sysmon:<host>:<field>.
@@ -53,6 +60,8 @@ CAPTURE_SECONDS = float(os.environ.get("CAPTURE_SECONDS", "120"))
 CAPTURE_KEEP = int(os.environ.get("CAPTURE_KEEP", "10"))
 CAPTURE_SNAPLEN = 128
 CAPTURE_MAX_BYTES = 10 * 2**20
+WIFI_IF = os.environ.get("SYSMON_WIFI_INTERFACE", "")  # e.g. wlx00c0cab9bac3 (Alfa, monitor mode set by the host)
+WIFI_SNAPLEN = int(os.environ.get("CAPTURE_WIFI_SNAPLEN", "320"))  # radiotap + 802.11 header + IEs (SSID, CSA, ...)
 PINGS = int(os.environ.get("SYSMON_PINGS", "20"))
 RETENTION_MS = int(os.environ.get("TS_RETENTION_DAYS", "365")) * 24 * 3600 * 1000
 
@@ -125,6 +134,29 @@ def mac_str(b: bytes) -> str:
     return ":".join(f"{x:02x}" for x in b)
 
 
+def pcap_open(prefix: str, snaplen: int, linktype: int):
+    """New pcap file "<prefix>-<timestamp>.pcap" in CAPTURE_DIR, header written; prunes old ones
+    with the same prefix beyond CAPTURE_KEEP."""
+    os.makedirs(CAPTURE_DIR, exist_ok=True)
+    name = datetime.now().strftime(f"{prefix}-%Y%m%d-%H%M%S.pcap")
+    f = open(os.path.join(CAPTURE_DIR, name), "wb")
+    # pcap global header: magic, v2.4, tz 0, sigfigs 0, snaplen, linktype
+    f.write(struct.pack("<IHHiIII", 0xA1B2C3D4, 2, 4, 0, 0, snaplen, linktype))
+    files = sorted(p for p in os.listdir(CAPTURE_DIR) if p.startswith(f"{prefix}-"))
+    for old in files[:-CAPTURE_KEEP]:
+        try:
+            os.remove(os.path.join(CAPTURE_DIR, old))
+        except OSError:
+            pass
+    return f, name
+
+
+def pcap_write(f, snaplen: int, frame: bytes):
+    t = time.time()
+    data = frame[:snaplen]
+    f.write(struct.pack("<IIII", int(t), int((t % 1) * 1e6), len(data), len(frame)) + data)
+
+
 class FrameWatch(threading.Thread):
     """Counts incoming frames on the interface and notes ARP claims for our and the router's IP."""
 
@@ -145,17 +177,7 @@ class FrameWatch(threading.Thread):
             self.capture_until = time.monotonic() + seconds
             if self.pcap:
                 return None
-            os.makedirs(CAPTURE_DIR, exist_ok=True)
-            name = datetime.now().strftime("capture-%Y%m%d-%H%M%S.pcap")
-            self.pcap = open(os.path.join(CAPTURE_DIR, name), "wb")
-            # pcap global header: magic, v2.4, tz 0, sigfigs 0, snaplen, linktype 1 (Ethernet)
-            self.pcap.write(struct.pack("<IHHiIII", 0xA1B2C3D4, 2, 4, 0, 0, CAPTURE_SNAPLEN, 1))
-        files = sorted(f for f in os.listdir(CAPTURE_DIR) if f.startswith("capture-"))
-        for old in files[:-CAPTURE_KEEP]:
-            try:
-                os.remove(os.path.join(CAPTURE_DIR, old))
-            except OSError:
-                pass
+            self.pcap, name = pcap_open("capture", CAPTURE_SNAPLEN, 1)  # linktype 1 = Ethernet
         return name
 
     def _write(self, frame: bytes):
@@ -164,9 +186,7 @@ class FrameWatch(threading.Thread):
             self.pcap.close()
             self.pcap = None
             return
-        t = time.time()
-        data = frame[:CAPTURE_SNAPLEN]
-        self.pcap.write(struct.pack("<IIII", int(t), int((t % 1) * 1e6), len(data), len(frame)) + data)
+        pcap_write(self.pcap, CAPTURE_SNAPLEN, frame)
 
     def _reset(self):
         self.bcast = self.mcast = self.arp = 0
@@ -226,6 +246,48 @@ class FrameWatch(threading.Thread):
         if bcast / dt_s > 50 and top:
             events.append(f"Rundsende-Flut: {bcast / dt_s:.0f}/s, meiste von {mac_str(top[0][0])} ({top[0][1]})")
         return nums, texts, events
+
+
+class RawCapture(threading.Thread):
+    """Dumps whatever arrives on an interface to a pcap file while triggered -- no analysis, just
+    bytes; used for the WLAN monitor-mode adapter (radiotap-framed 802.11), set up by the host."""
+
+    def __init__(self, iface: str, prefix: str, snaplen: int, linktype: int):
+        super().__init__(daemon=True, name=f"rawcapture-{prefix}")
+        self.iface, self.prefix, self.snaplen, self.linktype = iface, prefix, snaplen, linktype
+        self.lock = threading.Lock()
+        self.ok = False
+        self.pcap = None
+        self.capture_until = 0.0
+
+    def capture(self, seconds: float) -> str | None:
+        with self.lock:
+            self.capture_until = time.monotonic() + seconds
+            if self.pcap:
+                return None
+            self.pcap, name = pcap_open(self.prefix, self.snaplen, self.linktype)
+        return name
+
+    def run(self):
+        try:
+            sock = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.ntohs(0x0003))
+            sock.bind((self.iface, 0))
+            self.ok = True
+        except OSError as exc:
+            log.warning("WLAN capture on %s not possible (%s)", self.iface, exc)
+            return
+        while True:
+            frame, _ = sock.recvfrom(65535)
+            if not self.pcap:
+                continue
+            with self.lock:
+                if not self.pcap:
+                    continue
+                if time.monotonic() > self.capture_until or self.pcap.tell() > CAPTURE_MAX_BYTES:
+                    self.pcap.close()
+                    self.pcap = None
+                    continue
+                pcap_write(self.pcap, self.snaplen, frame)
 
 
 def meminfo() -> dict:
@@ -311,6 +373,11 @@ def main() -> None:
              ", ".join(f"{n} {a}" for n, a in PING_HOSTS), INTERVAL_S)
     watch = FrameWatch(NET_IF, MY_IP, PING_HOSTS[0][1] if PING_HOSTS else GATEWAY)
     watch.start()
+    wifi_watch = None
+    if WIFI_IF:
+        wifi_watch = RawCapture(WIFI_IF, "wifi-capture", WIFI_SNAPLEN, 127)  # 127 = IEEE 802.11 + radiotap
+        wifi_watch.start()
+        log.info("WLAN monitor capture on %s armed", WIFI_IF)
     prev, prev_t = {}, 0.0
     while True:
         started = time.monotonic()
@@ -323,6 +390,10 @@ def main() -> None:
                 started_file = watch.capture(CAPTURE_SECONDS)
                 if started_file:
                     events.append(f"Mitschnitt gestartet ({values['ping_loss_pct']:.0f} % Verlust zur Fritzbox): {started_file}")
+                if wifi_watch:
+                    wifi_file = wifi_watch.capture(CAPTURE_SECONDS)
+                    if wifi_file:
+                        events.append(f"WLAN-Mitschnitt gestartet: {wifi_file}")
             prev, prev_t = prev_now, started
             store(values, int(time.time() * 1000), texts, events)
         except Exception:

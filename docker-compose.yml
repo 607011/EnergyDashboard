@@ -114,6 +114,9 @@ services:
       TS_RETENTION_DAYS: ${TS_RETENTION_DAYS:-365}
       SYSMON_PING_HOST: ${SYSMON_PING_HOST:-192.168.0.1}
       SYSMON_PING_HOSTS: ${SYSMON_PING_HOSTS:-fritzbox:192.168.0.1,waermepumpe:192.168.0.95,steckdose:192.168.0.159}
+      # Alfa AWUS036AXM: wlan-monitor.service on the Pi (outside Docker) puts it into monitor
+      # mode on channel 36 at boot -- this container only ever reads from it, no cap_add needed.
+      SYSMON_WIFI_INTERFACE: ${SYSMON_WIFI_INTERFACE:-wlx00c0cab9bac3}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
   # Browser push notifications (Web Push) for the load management's switching events: page at

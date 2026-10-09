@@ -11,7 +11,7 @@ COMPOSE_SRC  := docker-compose.yml
 COMPOSE_DST  := $(DEPLOY_DIR)/docker-compose.yml
 
 .PHONY: help up down restart logs ps build \
-        deploy deploy-poller deploy-config deploy-images deploy-start \
+        deploy deploy-poller deploy-sysmon deploy-config deploy-images deploy-start \
         reading prepare-deploy clean-deploy
 
 help:
@@ -25,6 +25,7 @@ help:
 	@echo "Deployment to the Raspberry Pi (PI_HOST=$(PI_HOST), PI_DIR=$(PI_DIR)):"
 	@echo "  make deploy         - Full deploy: build, transfer all images, start"
 	@echo "  make deploy-poller  - Fast re-deploy: just the poller image (after code changes)"
+	@echo "  make deploy-sysmon  - Fast re-deploy: just the sysmon image (after code changes)"
 	@echo "  make deploy-config  - Only sync docker-compose.yml/.env/grafana/ (no restart)"
 	@echo "  make deploy-start   - (Re)start the stack on the Pi"
 	@echo "  make clean-deploy   - Remove local deploy artifacts (tarballs)"
@@ -110,6 +111,15 @@ deploy-poller: prepare-deploy
 	scp $(DEPLOY_DIR)/poller.tar.gz $(PI_HOST):$(PI_DIR)/
 	ssh $(PI_HOST) "cd $(PI_DIR) && zcat poller.tar.gz | docker load && rm poller.tar.gz"
 	rm -f $(DEPLOY_DIR)/poller.tar.gz
+	$(MAKE) deploy-config
+	$(MAKE) deploy-start
+
+# Fast re-deploy after sysmon code changes: only rebuild/transfer its image.
+deploy-sysmon: prepare-deploy
+	docker save se10k-sysmon:latest | gzip -1 > $(DEPLOY_DIR)/sysmon.tar.gz
+	scp $(DEPLOY_DIR)/sysmon.tar.gz $(PI_HOST):$(PI_DIR)/
+	ssh $(PI_HOST) "cd $(PI_DIR) && zcat sysmon.tar.gz | docker load && rm sysmon.tar.gz"
+	rm -f $(DEPLOY_DIR)/sysmon.tar.gz
 	$(MAKE) deploy-config
 	$(MAKE) deploy-start
 
