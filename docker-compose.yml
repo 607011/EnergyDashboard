@@ -102,11 +102,15 @@ services:
     volumes:
       # pcap files of the moments the router loses pings (for Wireshark), see sysmon/app.py
       - ./captures:/captures
+      # without this the container clock is UTC, so capture filenames and the events list
+      # (both built from datetime.now()) read 2h behind the Pi's real CEST/CET time
+      - /etc/localtime:/etc/localtime:ro
     depends_on:
       - redis
     environment:
       REDIS_HOST: 127.0.0.1
       REDIS_PORT: 6379
+      TZ: ${TZ:-Europe/Berlin}
       TS_RETENTION_DAYS: ${TS_RETENTION_DAYS:-365}
       SYSMON_PING_HOST: ${SYSMON_PING_HOST:-192.168.0.1}
       SYSMON_PING_HOSTS: ${SYSMON_PING_HOSTS:-fritzbox:192.168.0.1,waermepumpe:192.168.0.95,steckdose:192.168.0.159}
